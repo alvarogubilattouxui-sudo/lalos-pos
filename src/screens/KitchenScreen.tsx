@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, Check, ChefHat, Clock, HandPlatter, Printer } from "lucide-react";
+import { Ban, Banknote, Check, ChefHat, Clock, HandPlatter, Printer } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
+import { CobrarModal } from "@/components/CobrarModal";
 import type { Order, OrderStatus } from "@/lib/types";
-import { ORDER_TYPE_LABELS, STATUS_LABELS, cn, formatTime, minutesSince, ticketNo } from "@/lib/format";
+import { ORDER_TYPE_LABELS, PAYMENT_LABELS, STATUS_LABELS, cn, formatTime, minutesSince, ticketNo } from "@/lib/format";
 
-/** Pitido corto para que cocina se entere de un pedido web aunque esté de espaldas a la pantalla. */
 /** Siguiente paso de cada estado en la cocina. */
 const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string; icon: typeof Check }>> = {
   pending: { to: "preparing", label: "Empezar", icon: ChefHat },
@@ -28,6 +28,7 @@ export default function KitchenScreen() {
   const { toast } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [now, setNow] = useState(Date.now());
+  const [cobrando, setCobrando] = useState<Order | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -61,6 +62,9 @@ export default function KitchenScreen() {
   }, [load]);
 
   const move = async (o: Order, to: OrderStatus) => {
+    if (to === "delivered" && !o.paid_at && !window.confirm(`El pedido ${ticketNo(o.ticket_number)} todavía no está cobrado. ¿Entregarlo igual?`)) {
+      return;
+    }
     // Optimista: la cocina no espera
     setOrders((cur) => (to === "delivered" || to === "cancelled" ? cur.filter((x) => x.id !== o.id) : cur.map((x) => (x.id === o.id ? { ...x, status: to } : x))));
     try {
@@ -117,7 +121,22 @@ export default function KitchenScreen() {
                         </p>
                       </div>
                     </div>
+                    {o.pickup_time && (
+                      <p className="px-4 pt-2 text-base font-extrabold uppercase">
+                        Retiro <span className="text-flame">{o.pickup_time}</span>
+                      </p>
+                    )}
                     {o.customer_name && <p className="px-4 pt-2 text-sm font-semibold text-mustard">{o.customer_name}</p>}
+                    <p
+                      className={cn(
+                        "mx-4 mt-2 rounded-lg px-3 py-1.5 text-xs font-bold uppercase",
+                        o.paid_at ? "bg-emerald-500/15 text-emerald-700" : "bg-ketchup/20 text-ketchup",
+                      )}
+                    >
+                      {o.paid_at
+                        ? `Cobrado · ${PAYMENT_LABELS[o.paid_method ?? o.payment_method]}`
+                        : `Sin cobrar · paga con ${PAYMENT_LABELS[o.payment_method]}`}
+                    </p>
                     <ul className="space-y-2 px-4 py-3">
                       {o.items.map((it) => (
                         <li key={it.id}>
@@ -138,6 +157,11 @@ export default function KitchenScreen() {
                     </ul>
                     {o.notes && <p className="mx-4 mb-3 rounded-lg bg-ketchup/20 px-3 py-2 text-sm font-semibold">📝 {o.notes}</p>}
                     <footer className="flex gap-2 border-t border-asphalt-light p-2">
+                      {!o.paid_at && (
+                        <button type="button" onClick={() => setCobrando(o)} className="btn-ghost px-3" title="Cobrar">
+                          <Banknote className="h-4 w-4" /> Cobrar
+                        </button>
+                      )}
                       {next && (
                         <button type="button" onClick={() => void move(o, next.to)} className="btn-primary flex-1 py-3 text-base">
                           <next.icon className="h-5 w-5" /> {next.label}
@@ -160,6 +184,8 @@ export default function KitchenScreen() {
           </section>
         );
       })}
+
+      {cobrando && <CobrarModal order={cobrando} onClose={() => setCobrando(null)} onPaid={() => void load()} />}
     </div>
   );
 }

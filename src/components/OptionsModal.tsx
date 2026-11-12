@@ -10,6 +10,8 @@ export type CartLineDraft = {
   productId: string;
   name: string;
   unitPrice: number;
+  /** Costo de una unidad (producto + agregados). Para la ganancia del día. */
+  unitCost: number;
   quantity: number;
   modifications: string | null;
 };
@@ -47,6 +49,7 @@ function Body({ product, onClose, onConfirm }: { product: MenuProduct } & Omit<P
     [product, selected],
   );
   const unitPrice = product.price + chosen.reduce((s, c) => s + c.options.reduce((a, o) => a + o.price, 0), 0);
+  const unitCost = product.cost + chosen.reduce((s, c) => s + c.options.reduce((a, o) => a + o.cost, 0), 0);
 
   const confirm = () => {
     if (missing.length) return;
@@ -60,6 +63,7 @@ function Body({ product, onClose, onConfirm }: { product: MenuProduct } & Omit<P
       productId: product.id,
       name: product.name,
       unitPrice,
+      unitCost,
       quantity: qty,
       modifications: parts.length ? parts.join(" · ") : null,
     });

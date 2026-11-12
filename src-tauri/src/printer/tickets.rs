@@ -62,6 +62,12 @@ pub fn kitchen(order: &Order, paper_mm: u8, copy_label: Option<&str>) -> Vec<u8>
     if let Some(name) = &order.customer_name {
         p.size(1, 2).bold(true).line(name).normal();
     }
+    if let Some(hora) = &order.pickup_time {
+        p.size(1, 2).bold(true).line(&format!("RETIRO {hora}")).normal();
+    }
+    if order.paid_at.is_none() {
+        p.bold(true).line(&format!("PAGO: {} (sin cobrar)", payment_label(&order.payment_method))).bold(false);
+    }
     if let Some(label) = copy_label {
         p.line(label);
     }
@@ -71,10 +77,10 @@ pub fn kitchen(order: &Order, paper_mm: u8, copy_label: Option<&str>) -> Vec<u8>
         p.size(1, 2).bold(true).wrapped(&format!("{}x {}", item.quantity, item.product_name.to_uppercase()), 3);
         p.normal();
         if let Some(mods) = &item.modifications {
-            let width = p.current_cols().saturating_sub(5);
+            let width = p.current_cols().saturating_sub(3);
             for part in mods.split(" · ").filter(|s| !s.trim().is_empty()) {
                 for chunk in super::escpos::wrap(part.trim(), width, 0) {
-                    p.bold(true).reverse(true).text(&format!(" >> {chunk} ")).reverse(false).bold(false).line("");
+                    p.bold(true).line(&format!(">> {chunk}")).bold(false);
                 }
             }
         }
@@ -110,6 +116,9 @@ pub fn receipt(order: &Order, paper_mm: u8, open_drawer: bool) -> Vec<u8> {
     if let Some(name) = &order.customer_name {
         p.line(&format!("Cliente: {name}"));
     }
+    if let Some(hora) = &order.pickup_time {
+        p.line(&format!("Retiro: {hora}"));
+    }
     p.separator('-');
 
     for item in &order.items {
@@ -124,7 +133,10 @@ pub fn receipt(order: &Order, paper_mm: u8, open_drawer: bool) -> Vec<u8> {
 
     p.separator('-');
     p.size(1, 2).bold(true).two_cols("TOTAL", &money(order.total)).normal();
-    p.two_cols("Pago", payment_label(&order.payment_method));
+    match (&order.paid_at, &order.paid_method) {
+        (Some(_), Some(m)) => p.two_cols("Pago", payment_label(m)),
+        _ => p.two_cols("Pago", "Pendiente de cobro"),
+    };
     if let Some(cash) = order.cash_received {
         p.two_cols("Recibido", &money(cash));
         if let Some(change) = order.change() {

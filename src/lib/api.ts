@@ -7,6 +7,7 @@ import type {
   NewOrder,
   Order,
   OrderStatus,
+  PaymentMethod,
   PrinterConfig,
 } from "@/lib/types";
 
@@ -16,7 +17,16 @@ import type {
  * (Los argumentos van en camelCase; Tauri los mapea a snake_case en Rust.)
  */
 
-export type AdminTable = "categories" | "products" | "promotions" | "option_groups" | "options" | "horarios" | "tienda";
+export type AdminTable =
+  | "categories"
+  | "products"
+  | "promotions"
+  | "option_groups"
+  | "options"
+  | "horarios"
+  | "tienda"
+  | "product_costs"
+  | "option_costs";
 
 /** Horario de un día de la semana (dia_semana: 0 = domingo). abre/cierra null = cerrado ese día. */
 export interface HorarioRow {
@@ -71,6 +81,7 @@ export const api = {
   listTodayOrders: (limit = 30) => invoke<Order[]>("list_today_orders", { limit }),
   daySummary: () => invoke<DaySummary>("day_summary"),
   updateOrderStatus: (id: string, status: OrderStatus) => invoke<void>("update_order_status", { id, status }),
+  markOrderPaid: (id: string, method: PaymentMethod, amount: number) => invoke<Order>("mark_order_paid", { id, method, amount }),
 
   // Impresora
   listPrinters: () => invoke<AvailablePrinters>("list_printers"),

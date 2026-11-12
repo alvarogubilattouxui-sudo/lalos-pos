@@ -46,6 +46,12 @@ export interface ProductOptionGroupRow {
   display_order: number;
 }
 
+/** Costo de un producto u opción (tabla privada: solo personal). El id es el del producto/opción. */
+export interface CostRow {
+  id: string;
+  cost: number;
+}
+
 export type DiscountType = "percent" | "fixed" | "free_item";
 
 export interface PromotionRow {
@@ -67,13 +73,17 @@ export interface MenuSnapshot {
   options: OptionRow[];
   product_option_groups: ProductOptionGroupRow[];
   promotions: PromotionRow[];
+  /** Opcionales: las copias guardadas antes de la versión con costos no los tienen. */
+  product_costs?: CostRow[];
+  option_costs?: CostRow[];
   fetched_at: string;
 }
 
 /* ---------- Menú armado para la UI ---------- */
 
-export type MenuOptionGroup = OptionGroupRow & { options: OptionRow[] };
-export type MenuProduct = ProductRow & { optionGroups: MenuOptionGroup[] };
+export type MenuOption = OptionRow & { cost: number };
+export type MenuOptionGroup = OptionGroupRow & { options: MenuOption[] };
+export type MenuProduct = ProductRow & { optionGroups: MenuOptionGroup[]; cost: number };
 export type MenuCategory = CategoryRow & { products: MenuProduct[] };
 
 /* ---------- Pedidos (SQLite local) ---------- */
@@ -90,6 +100,7 @@ export interface OrderItem {
   quantity: number;
   modifications: string | null;
   subtotal: number;
+  unit_cost: number;
 }
 
 export interface Order {
@@ -100,9 +111,16 @@ export interface Order {
   order_type: OrderType;
   status: OrderStatus;
   total: number;
+  /** Medio elegido al pedir (web) o con el que se cobró (caja). */
   payment_method: PaymentMethod;
   cash_received: number | null;
   notes: string | null;
+  /** Horario de retiro elegido en la web ("HH:MM"). null = lo antes posible. */
+  pickup_time: string | null;
+  /** null = todavía sin cobrar. */
+  paid_at: string | null;
+  paid_method: PaymentMethod | null;
+  paid_amount: number | null;
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -122,14 +140,27 @@ export interface NewOrder {
     unit_price: number;
     quantity: number;
     modifications: string | null;
+    unit_cost: number;
   }[];
 }
 
+export interface MethodTotal {
+  method: PaymentMethod;
+  orders: number;
+  amount: number;
+}
+
+/** Resumen de caja del día (pedidos sin cancelar). */
 export interface DaySummary {
   business_day: string;
   orders: number;
   total: number;
-  by_payment: [PaymentMethod, number][];
+  cost: number;
+  profit: number;
+  paid_total: number;
+  by_payment: MethodTotal[];
+  pending_orders: number;
+  pending_total: number;
 }
 
 /* ---------- App / impresora ---------- */

@@ -19,6 +19,9 @@ pub struct NewOrderItem {
     pub unit_price: f64,
     pub quantity: i64,
     pub modifications: Option<String>,
+    /// Costo de un ítem (producto + agregados) para calcular la ganancia del día.
+    #[serde(default)]
+    pub unit_cost: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +43,7 @@ pub struct OrderItem {
     pub quantity: i64,
     pub modifications: Option<String>,
     pub subtotal: f64,
+    pub unit_cost: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,9 +55,16 @@ pub struct Order {
     pub order_type: String,
     pub status: String,
     pub total: f64,
+    /// Medio con el que eligió pagar (web) o con el que se cobró (caja).
     pub payment_method: String,
     pub cash_received: Option<f64>,
     pub notes: Option<String>,
+    /// Horario de retiro elegido por el cliente en la web ("HH:MM"). None = lo antes posible.
+    pub pickup_time: Option<String>,
+    /// Cuándo se cobró. None = todavía sin cobrar (pedidos web).
+    pub paid_at: Option<String>,
+    pub paid_method: Option<String>,
+    pub paid_amount: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
     pub synced: bool,
@@ -67,6 +78,7 @@ impl Order {
     }
 
     /// Payload para la función `pos_upsert_order` de Supabase.
+    /// (Los datos de cobro y costos quedan solo en esta caja.)
     pub fn to_cloud_payload(&self) -> Value {
         json!({
             "id": self.id,
@@ -141,6 +153,7 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
                 quantity: qty,
                 modifications: clean(i.modifications),
                 subtotal: round2(price * qty as f64),
+                unit_cost: round2(i.unit_cost.max(0.0)),
             }
         })
         .collect();
@@ -165,10 +178,12 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
     let notes = clean(input.notes);
     let cash_received = if input.payment_method == "cash" { input.cash_received } else { None };
 
+    // En caja el pedido se cobra al confirmarlo: queda cobrado al mismo momento
     tx.execute(
         "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
-                             payment_method, cash_received, notes, created_at, updated_at, synced)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?10, 0)",
+                             payment_method, cash_received, notes, created_at, updated_at, synced,
+                             paid_at, paid_method, paid_amount)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?10, 0, ?10, ?7, ?6)",
         params![
             id, ticket_number, day, customer_name, input.order_type, total,
             input.payment_method, cash_received, notes, now
@@ -176,9 +191,9 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
     )?;
     for it in &items {
         tx.execute(
-            "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![it.id, id, it.product_id, it.product_name, it.unit_price, it.quantity, it.modifications, it.subtotal],
+            "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal, unit_cost)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![it.id, id, it.product_id, it.product_name, it.unit_price, it.quantity, it.modifications, it.subtotal, it.unit_cost],
         )?;
     }
     tx.commit()?;
@@ -191,9 +206,13 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
         order_type: input.order_type,
         status: "pending".into(),
         total,
-        payment_method: input.payment_method,
+        payment_method: input.payment_method.clone(),
         cash_received,
         notes,
+        pickup_time: None,
+        paid_at: Some(now.clone()),
+        paid_method: Some(input.payment_method),
+        paid_amount: Some(total),
         created_at: now.clone(),
         updated_at: now,
         synced: false,
@@ -203,7 +222,8 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
 }
 
 const ORDER_COLS: &str = "id, ticket_number, business_day, customer_name, order_type, status, total, payment_method,
-                          cash_received, notes, created_at, updated_at, synced, sync_error";
+                          cash_received, notes, created_at, updated_at, synced, sync_error,
+                          pickup_time, paid_at, paid_method, paid_amount";
 
 fn map_order(r: &Row) -> rusqlite::Result<Order> {
     Ok(Order {
@@ -221,13 +241,17 @@ fn map_order(r: &Row) -> rusqlite::Result<Order> {
         updated_at: r.get(11)?,
         synced: r.get::<_, i64>(12)? == 1,
         sync_error: r.get(13)?,
+        pickup_time: r.get(14)?,
+        paid_at: r.get(15)?,
+        paid_method: r.get(16)?,
+        paid_amount: r.get(17)?,
         items: Vec::new(),
     })
 }
 
 fn load_items(conn: &Connection, order: &mut Order) -> AppResult<()> {
     let mut stmt = conn.prepare_cached(
-        "SELECT id, product_id, product_name, unit_price, quantity, modifications, subtotal
+        "SELECT id, product_id, product_name, unit_price, quantity, modifications, subtotal, unit_cost
          FROM order_items WHERE order_id = ?1 ORDER BY rowid",
     )?;
     order.items = stmt
@@ -240,6 +264,7 @@ fn load_items(conn: &Connection, order: &mut Order) -> AppResult<()> {
                 quantity: r.get(4)?,
                 modifications: r.get(5)?,
                 subtotal: r.get(6)?,
+                unit_cost: r.get(7)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -257,6 +282,7 @@ fn query_orders(conn: &Connection, sql: &str, args: &[&dyn rusqlite::ToSql]) -> 
 
 /// Pedidos hechos desde la web (Supabase, source = 'web'): los guarda en esta caja con su número de ticket.
 /// Ya están en la nube, así que quedan como sincronizados. Los que ya existen localmente se ignoran.
+/// Entran SIN cobrar: se cobran en la caja al retirar.
 pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec<Order>> {
     let mut imported = Vec::new();
     for row in rows {
@@ -279,8 +305,8 @@ pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec
         )?;
         tx.execute(
             "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
-                                 payment_method, cash_received, notes, created_at, updated_at, synced)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, 1)",
+                                 payment_method, cash_received, notes, created_at, updated_at, synced, pickup_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, 1, ?12)",
             params![
                 id,
                 ticket,
@@ -293,12 +319,13 @@ pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec
                 row["notes"].as_str(),
                 created,
                 updated,
+                row["pickup_time"].as_str().map(|t| t.chars().take(5).collect::<String>()),
             ],
         )?;
         for it in row["order_items"].as_array().cloned().unwrap_or_default() {
             tx.execute(
-                "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal, unit_cost)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     it["id"].as_str().unwrap_or_default(),
                     id,
@@ -308,6 +335,7 @@ pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec
                     it["quantity"].as_i64().unwrap_or(1),
                     it["modifications"].as_str(),
                     it["subtotal"].as_f64().unwrap_or(0.0),
+                    it["unit_cost"].as_f64().unwrap_or(0.0),
                 ],
             )?;
         }
@@ -338,7 +366,7 @@ pub fn list_kitchen(conn: &Connection) -> AppResult<Vec<Order>> {
     query_orders(conn, &sql, &[&since])
 }
 
-/// Últimos pedidos del día (para reimprimir desde la caja).
+/// Últimos pedidos del día (para reimprimir y cobrar desde la caja).
 pub fn list_today(conn: &Connection, limit: i64) -> AppResult<Vec<Order>> {
     let day = business_day_offset(0);
     let sql = format!("SELECT {ORDER_COLS} FROM orders WHERE business_day = ?1 ORDER BY ticket_number DESC LIMIT ?2");
@@ -355,6 +383,26 @@ pub fn update_status(conn: &Connection, id: &str, status: &str) -> AppResult<()>
     )?;
     if n == 0 {
         return Err(AppError::msg("Pedido no encontrado"));
+    }
+    Ok(())
+}
+
+/// Registra el cobro de un pedido (efectivo, débito, QR o transferencia, y el importe cobrado).
+/// Es solo local: no modifica el pedido en la nube, así no se vuelve a subir.
+pub fn mark_paid(conn: &Connection, id: &str, method: &str, amount: f64) -> AppResult<()> {
+    if !PAYMENT_METHODS.contains(&method) {
+        return Err(AppError::msg("Medio de pago inválido"));
+    }
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err(AppError::msg("El importe tiene que ser mayor a cero"));
+    }
+    let n = conn.execute(
+        "UPDATE orders SET paid_at = ?1, paid_method = ?2, paid_amount = ?3
+         WHERE id = ?4 AND status <> 'cancelled'",
+        params![now_utc(), method, round2(amount), id],
+    )?;
+    if n == 0 {
+        return Err(AppError::msg("Pedido no encontrado o cancelado"));
     }
     Ok(())
 }
@@ -383,27 +431,76 @@ pub fn mark_sync_error(conn: &Connection, id: &str, error: &str) -> AppResult<()
 }
 
 #[derive(Debug, Serialize)]
-pub struct DaySummary {
-    pub business_day: String,
+pub struct MethodTotal {
+    pub method: String,
     pub orders: i64,
-    pub total: f64,
-    pub by_payment: Vec<(String, f64)>,
+    pub amount: f64,
 }
 
-/// Resumen rápido de caja del día (no cuenta cancelados).
+#[derive(Debug, Serialize)]
+pub struct DaySummary {
+    pub business_day: String,
+    /// Pedidos del día (sin cancelados) y lo vendido en total.
+    pub orders: i64,
+    pub total: f64,
+    /// Costo de lo vendido y ganancia neta (vendido − costo).
+    pub cost: f64,
+    pub profit: f64,
+    /// Lo que ya se cobró, por medio de pago.
+    pub paid_total: f64,
+    pub by_payment: Vec<MethodTotal>,
+    /// Lo que todavía no se cobró (pedidos web que se retiran y se pagan en la caja).
+    pub pending_orders: i64,
+    pub pending_total: f64,
+}
+
+/// Resumen de caja del día: vendido, costo, ganancia, cobrado por medio y pendiente.
 pub fn day_summary(conn: &Connection) -> AppResult<DaySummary> {
     let day = business_day_offset(0);
-    let (orders, total): (i64, f64) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(total), 0) FROM orders WHERE business_day = ?1 AND status <> 'cancelled'",
+
+    let (orders, total, cost): (i64, f64, f64) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(o.total), 0), COALESCE(SUM(c.cost), 0)
+           FROM orders o
+           LEFT JOIN (SELECT order_id, SUM(quantity * unit_cost) AS cost FROM order_items GROUP BY order_id) c
+                  ON c.order_id = o.id
+          WHERE o.business_day = ?1 AND o.status <> 'cancelled'",
+        [&day],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+
+    let (pending_orders, pending_total): (i64, f64) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(total), 0) FROM orders
+          WHERE business_day = ?1 AND status <> 'cancelled' AND paid_at IS NULL",
         [&day],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
+
     let mut stmt = conn.prepare(
-        "SELECT payment_method, SUM(total) FROM orders
-         WHERE business_day = ?1 AND status <> 'cancelled' GROUP BY payment_method",
+        "SELECT COALESCE(paid_method, 'cash'), COUNT(*), COALESCE(SUM(paid_amount), 0) FROM orders
+          WHERE business_day = ?1 AND status <> 'cancelled' AND paid_at IS NOT NULL
+          GROUP BY COALESCE(paid_method, 'cash')
+          ORDER BY SUM(paid_amount) DESC",
     )?;
     let by_payment = stmt
-        .query_map([&day], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map([&day], |r| {
+            Ok(MethodTotal {
+                method: r.get(0)?,
+                orders: r.get(1)?,
+                amount: round2(r.get(2)?),
+            })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(DaySummary { business_day: day, orders, total, by_payment })
+    let paid_total = round2(by_payment.iter().map(|m| m.amount).sum());
+
+    Ok(DaySummary {
+        business_day: day,
+        orders,
+        total: round2(total),
+        cost: round2(cost),
+        profit: round2(total - cost),
+        paid_total,
+        by_payment,
+        pending_orders,
+        pending_total: round2(pending_total),
+    })
 }

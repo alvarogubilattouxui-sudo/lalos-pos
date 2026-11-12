@@ -52,7 +52,36 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     // WAL: lecturas del KDS no bloquean las escrituras de la caja
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;")?;
     conn.execute_batch(SCHEMA)?;
+
+    // Columnas agregadas después: una caja con la base vieja se actualiza sola al abrir
+    add_column(&conn, "orders", "pickup_time", "TEXT")?;
+    add_column(&conn, "orders", "paid_at", "TEXT")?;
+    add_column(&conn, "orders", "paid_method", "TEXT")?;
+    add_column(&conn, "orders", "paid_amount", "REAL")?;
+    add_column(&conn, "order_items", "unit_cost", "REAL NOT NULL DEFAULT 0")?;
+
+    // Una sola vez: los pedidos anteriores ya estaban cobrados al venderse
+    if kv_get(&conn, "migr_cobros_v1")?.is_none() {
+        conn.execute(
+            "UPDATE orders SET paid_at = created_at, paid_method = payment_method, paid_amount = total
+             WHERE paid_at IS NULL",
+            [],
+        )?;
+        kv_set(&conn, "migr_cobros_v1", "1")?;
+    }
     Ok(conn)
+}
+
+fn add_column(conn: &Connection, table: &str, column: &str, decl: &str) -> AppResult<()> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl};"))?;
+    }
+    Ok(())
 }
 
 pub fn kv_get(conn: &Connection, key: &str) -> AppResult<Option<String>> {

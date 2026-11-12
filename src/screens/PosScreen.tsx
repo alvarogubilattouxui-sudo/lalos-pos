@@ -6,6 +6,7 @@ import { normalize } from "@/lib/menu";
 import type { MenuProduct, Order, OrderType, PaymentMethod } from "@/lib/types";
 import { ORDER_TYPE_LABELS, PAYMENT_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 import { OptionsModal, type CartLineDraft } from "@/components/OptionsModal";
+import { CobrarModal } from "@/components/CobrarModal";
 
 type CartLine = CartLineDraft & { key: string };
 
@@ -71,7 +72,7 @@ export default function PosScreen() {
     if (!p.available) return;
     // Si tiene opciones obligatorias, hay que abrir el selector
     if (p.optionGroups.some((g) => g.min_selections > 0)) return setCustomizing(p);
-    addLine({ productId: p.id, name: p.name, unitPrice: p.price, quantity: 1, modifications: null });
+    addLine({ productId: p.id, name: p.name, unitPrice: p.price, unitCost: p.cost, quantity: 1, modifications: null });
   };
 
   const setQty = (key: string, q: number) =>
@@ -102,6 +103,7 @@ export default function PosScreen() {
           unit_price: l.unitPrice,
           quantity: l.quantity,
           modifications: l.modifications,
+          unit_cost: l.unitCost,
         })),
       });
       const vuelto = order.cash_received ? order.cash_received - order.total : 0;
@@ -370,12 +372,17 @@ export default function PosScreen() {
 function HistoryDrawer({ onClose }: { onClose: () => void }) {
   const { toast } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [summary, setSummary] = useState<{ orders: number; total: number } | null>(null);
+  const [summary, setSummary] = useState<{ orders: number; total: number; pending_orders: number } | null>(null);
+  const [cobrando, setCobrando] = useState<Order | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     void api.listTodayOrders(40).then(setOrders).catch((e) => toast(errorText(e), "error"));
     void api.daySummary().then(setSummary).catch(() => undefined);
   }, [toast]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const reprint = async (id: string, kind: "kitchen" | "receipt") => {
     try {
@@ -395,6 +402,7 @@ function HistoryDrawer({ onClose }: { onClose: () => void }) {
             {summary && (
               <p className="text-sm text-smoke">
                 {summary.orders} pedidos · {formatPrice(summary.total)}
+                {summary.pending_orders > 0 && ` · ${summary.pending_orders} sin cobrar`}
               </p>
             )}
           </div>
@@ -408,14 +416,21 @@ function HistoryDrawer({ onClose }: { onClose: () => void }) {
               <span className="title w-14 text-2xl text-flame">{ticketNo(o.ticket_number)}</span>
               <div className="min-w-0 flex-1 text-sm">
                 <p className="font-semibold">
-                  {formatPrice(o.total)} · {PAYMENT_LABELS[o.payment_method]}
+                  {formatPrice(o.total)} · {PAYMENT_LABELS[o.paid_method ?? o.payment_method]}
+                  {!o.paid_at && <span className="ml-2 rounded bg-ketchup px-1.5 py-0.5 text-[10px] font-bold uppercase">Sin cobrar</span>}
                 </p>
                 <p className="truncate text-xs text-smoke">
                   {formatTime(o.created_at)} · {o.customer_name ?? "Sin nombre"} · {o.items.length} ítem(s)
+                  {o.pickup_time && ` · retiro ${o.pickup_time}`}
                   {o.status === "cancelled" && " · CANCELADO"}
                   {!o.synced && " · sin subir"}
                 </p>
               </div>
+              {!o.paid_at && o.status !== "cancelled" && (
+                <button type="button" onClick={() => setCobrando(o)} className="btn-primary px-2.5 py-1.5 text-xs">
+                  Cobrar
+                </button>
+              )}
               <button type="button" onClick={() => void reprint(o.id, "kitchen")} className="btn-ghost px-2.5 py-1.5 text-xs">
                 Comanda
               </button>
@@ -427,6 +442,13 @@ function HistoryDrawer({ onClose }: { onClose: () => void }) {
           {orders.length === 0 && <li className="p-8 text-center text-sm text-smoke">Todavía no hay pedidos hoy.</li>}
         </ul>
       </div>
+      {cobrando && (
+        <CobrarModal
+          order={cobrando}
+          onClose={() => setCobrando(null)}
+          onPaid={() => reload()}
+        />
+      )}
     </div>
   );
 }

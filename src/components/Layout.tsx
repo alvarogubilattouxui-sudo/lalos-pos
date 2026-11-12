@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useApp } from "@/lib/store";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const NAV = [
   { to: "/", label: "Caja", icon: ShoppingCart, key: "F1" },
@@ -56,11 +57,9 @@ export function Layout() {
     <div className="flex h-full">
       {/* Barra lateral */}
       <nav className="flex w-24 shrink-0 flex-col items-center gap-2 border-r border-asphalt-light bg-asphalt py-4">
-        <div className="mb-4 flex flex-col items-center leading-none">
-          <span className="title text-3xl">
-            Lalo<span className="text-flame">&apos;</span>s
-          </span>
-          <span className="mt-1 rounded-sm bg-flame px-1 font-display text-xs uppercase tracking-poster text-azul-d">POS</span>
+        <div className="mb-4 flex flex-col items-center gap-1.5 px-2">
+          <BrandLogo className="h-auto w-20" />
+          <span className="rounded-sm bg-naranja px-1.5 font-display text-xs uppercase tracking-poster text-papel">POS</span>
         </div>
 
         {NAV.map(({ to, label, icon: Icon, key }) => (

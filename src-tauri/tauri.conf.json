@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lalos POS",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "com.lalosburgas.pos",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -29,7 +29,7 @@
       "csp": {
         "default-src": "'self'",
         "connect-src": "ipc: http://ipc.localhost",
-        "img-src": "'self' data: blob: https://*.supabase.co",
+        "img-src": "'self' data: blob: https://*.supabase.co https://lalos-burgers.pages.dev",
         "style-src": "'self' 'unsafe-inline'",
         "font-src": "'self' data:",
         "script-src": "'self'"

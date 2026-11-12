@@ -48,7 +48,7 @@
     @apply btn border border-ketchup/50 text-ketchup hover:bg-ketchup/15;
   }
   .input {
-    @apply w-full rounded-xl border border-asphalt-lighter bg-carbon px-3 py-2.5 text-sm text-papel
+    @apply w-full rounded-xl border border-asphalt-lighter bg-carbon px-3 py-2.5 text-sm text-azul
       placeholder:text-smoke/60 focus:border-flame focus:outline-none;
   }
   .label {

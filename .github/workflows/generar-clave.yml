@@ -1,0 +1,35 @@
+name: Generar clave de firma (una sola vez)
+
+# Crea el par de claves que firma las actualizaciones del POS.
+# La clave privada queda como archivo descargable (Artifacts), NO se imprime en el registro.
+on:
+  workflow_dispatch:
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar herramientas
+        run: npm install
+
+      - name: Generar claves
+        run: |
+          PASS=$(openssl rand -base64 24)
+          npx tauri signer generate -w ./firma/lalos-pos.key -p "$PASS" -f
+          echo "$PASS" > ./firma/contrasena.txt
+          echo "Clave pública (no es secreta):"
+          cat ./firma/lalos-pos.key.pub
+          echo ""
+
+      - name: Subir la clave privada como archivo descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: clave-de-firma
+          path: firma/
+          retention-days: 1

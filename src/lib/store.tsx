@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { playOrderAlert, unlockSound } from "@/lib/sound";
 import { api, errorText } from "@/lib/api";
 import { buildMenu } from "@/lib/menu";
 import type { AppStatus, MenuCategory, MenuSnapshot } from "@/lib/types";
@@ -62,12 +63,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const id = setInterval(refreshStatus, 5000);
 
     // El worker de Rust avisa cuando baja un menú nuevo o sincroniza pedidos
+    // Pedido web nuevo: suena en cualquier pantalla, no solo en Cocina
     const unlisten = Promise.all([
       listen("menu-updated", () => void reloadMenu(false)),
       listen("orders-synced", () => void refreshStatus()),
+      listen("web-order", () => playOrderAlert()),
     ]);
+    // El audio necesita un toque previo del cajero para poder sonar
+    const desbloquear = () => unlockSound();
+    window.addEventListener("pointerdown", desbloquear, { once: true });
+    window.addEventListener("keydown", desbloquear, { once: true });
     return () => {
       clearInterval(id);
+      window.removeEventListener("pointerdown", desbloquear);
+      window.removeEventListener("keydown", desbloquear);
       void unlisten.then((fns) => fns.forEach((f) => f()));
     };
   }, [refreshStatus, reloadMenu]);

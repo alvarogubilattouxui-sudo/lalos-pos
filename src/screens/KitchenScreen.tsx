@@ -7,19 +7,6 @@ import type { Order, OrderStatus } from "@/lib/types";
 import { ORDER_TYPE_LABELS, STATUS_LABELS, cn, formatTime, minutesSince, ticketNo } from "@/lib/format";
 
 /** Pitido corto para que cocina se entere de un pedido web aunque esté de espaldas a la pantalla. */
-function beep() {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    osc.frequency.value = 880;
-    osc.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.25);
-  } catch {
-    // sin audio: no pasa nada, el pedido igual aparece en pantalla
-  }
-}
-
 /** Siguiente paso de cada estado en la cocina. */
 const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string; icon: typeof Check }>> = {
   pending: { to: "preparing", label: "Empezar", icon: ChefHat },
@@ -54,7 +41,6 @@ export default function KitchenScreen() {
   useEffect(() => {
     const unlisten = listen<{ count: number; tickets: number[]; print_error: string | null }>("web-order", (e) => {
       void load();
-      beep();
       toast(`Pedido web ${e.payload.tickets.map(ticketNo).join(", ")} ${e.payload.print_error ? "" : "· comanda impresa"}`.trim(), "ok");
       if (e.payload.print_error) toast(`No se pudo imprimir la comanda: ${e.payload.print_error}`, "error");
     });

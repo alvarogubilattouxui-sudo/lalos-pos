@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { playOrderAlert, unlockSound } from "@/lib/sound";
+import { buscarActualizacion } from "@/lib/updates";
 import { api, errorText } from "@/lib/api";
 import { buildMenu } from "@/lib/menu";
 import type { AppStatus, MenuCategory, MenuSnapshot } from "@/lib/types";
@@ -61,6 +62,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void refreshStatus();
     void reloadMenu(true);
     const id = setInterval(refreshStatus, 5000);
+    // Actualizaciones: al arrancar (a los 10 s) y después cada 2 horas
+    const primeraVez = setTimeout(() => void buscarActualizacion(), 10_000);
+    const cadaDosHoras = setInterval(() => void buscarActualizacion(), 2 * 60 * 60 * 1000);
 
     // El worker de Rust avisa cuando baja un menú nuevo o sincroniza pedidos
     // Pedido web nuevo: suena en cualquier pantalla, no solo en Cocina
@@ -75,6 +79,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", desbloquear, { once: true });
     return () => {
       clearInterval(id);
+      clearTimeout(primeraVez);
+      clearInterval(cadaDosHoras);
       window.removeEventListener("pointerdown", desbloquear);
       window.removeEventListener("keydown", desbloquear);
       void unlisten.then((fns) => fns.forEach((f) => f()));

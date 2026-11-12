@@ -14,6 +14,8 @@ use state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // %APPDATA%\com.lalosburgas.pos\lalos-pos.db
             let dir = app.path().app_data_dir()?;

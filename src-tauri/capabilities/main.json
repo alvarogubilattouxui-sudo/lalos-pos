@@ -2,11 +2,15 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Permisos de la ventana principal del POS. Mínimos a propósito: la impresora, SQLite y Supabase se manejan en Rust a través de comandos propios, no con plugins expuestos al WebView.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:event:default",
     "core:window:allow-set-fullscreen",
-    "core:window:allow-is-fullscreen"
+    "core:window:allow-is-fullscreen",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

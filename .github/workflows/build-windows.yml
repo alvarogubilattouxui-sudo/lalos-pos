@@ -1,9 +1,12 @@
-name: Armar instalador de Windows
+name: Armar y publicar el POS (Windows)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -24,11 +27,16 @@ jobs:
       - name: Instalar dependencias
         run: npm install
 
-      - name: Armar la app
-        run: npm run app:build
-
-      - name: Subir el instalador
-        uses: actions/upload-artifact@v4
+      - name: Armar el instalador y publicar la versión
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          name: lalos-pos-windows
-          path: src-tauri/target/release/bundle/
+          tagName: v__VERSION__
+          releaseName: "Lalo's POS v__VERSION__"
+          releaseBody: "Actualización del POS de Lalo's. Se instala desde la propia caja."
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

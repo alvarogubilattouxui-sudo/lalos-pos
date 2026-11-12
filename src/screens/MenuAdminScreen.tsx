@@ -40,7 +40,7 @@ export default function MenuAdminScreen() {
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={cn("btn", tab === id ? "bg-flame text-carbon" : "text-smoke hover:bg-asphalt-light hover:text-bone")}
+            className={cn("btn", tab === id ? "bg-flame text-azul-d" : "text-smoke hover:bg-asphalt-light hover:text-bone")}
           >
             <Icon className="h-4 w-4" /> {label}
           </button>
@@ -169,7 +169,7 @@ function ProductsTab({ canEdit }: { canEdit: boolean }) {
                       onClick={() => void toggleAvailable(p)}
                       className={cn(
                         "w-28 rounded-full px-3 py-1.5 text-xs font-bold uppercase transition-colors disabled:opacity-50",
-                        p.available ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-ketchup text-bone hover:bg-ketchup/80",
+                        p.available ? "bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30" : "bg-ketchup text-papel hover:bg-ketchup/80",
                       )}
                     >
                       {p.available ? "Disponible" : "Agotado"}
@@ -179,7 +179,7 @@ function ProductsTab({ canEdit }: { canEdit: boolean }) {
                     <button type="button" onClick={() => setEditing(p)} disabled={!canEdit} className="rounded-lg p-2 text-smoke hover:bg-asphalt-light hover:text-bone disabled:opacity-40" title="Editar">
                       <Pencil className="h-4 w-4" />
                     </button>
-                    <button type="button" onClick={() => void remove(p)} disabled={!canEdit} className="rounded-lg p-2 text-smoke hover:bg-ketchup/20 hover:text-[#ff8a7a] disabled:opacity-40" title="Borrar">
+                    <button type="button" onClick={() => void remove(p)} disabled={!canEdit} className="rounded-lg p-2 text-smoke hover:bg-ketchup/20 hover:text-ketchup disabled:opacity-40" title="Borrar">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -440,7 +440,7 @@ function PricesTab({ canEdit }: { canEdit: boolean }) {
           <label className="label">Redondear a</label>
           <div className="grid grid-cols-4 gap-2">
             {[10, 50, 100, 500].map((r) => (
-              <button key={r} type="button" onClick={() => setRoundTo(r)} className={cn("btn", roundTo === r ? "bg-flame text-carbon" : "bg-asphalt-light")}>
+              <button key={r} type="button" onClick={() => setRoundTo(r)} className={cn("btn", roundTo === r ? "bg-flame text-azul-d" : "bg-asphalt-light")}>
                 ${r}
               </button>
             ))}
@@ -465,7 +465,7 @@ function PricesTab({ canEdit }: { canEdit: boolean }) {
               <tr key={p.id}>
                 <td className="px-4 py-2">{p.name}</td>
                 <td className="py-2 text-right text-smoke">{formatPrice(p.before)}</td>
-                <td className={cn("px-4 py-2 text-right font-bold", p.after > p.before ? "text-flame" : "text-emerald-400")}>{formatPrice(p.after)}</td>
+                <td className={cn("px-4 py-2 text-right font-bold", p.after > p.before ? "text-flame" : "text-emerald-700")}>{formatPrice(p.after)}</td>
               </tr>
             ))}
           </tbody>
@@ -522,7 +522,7 @@ function PromosTab({ canEdit }: { canEdit: boolean }) {
           <article key={p.id} className={cn("card space-y-2 p-4", !p.active && "opacity-50")}>
             <div className="flex items-start justify-between gap-2">
               <h3 className="title text-2xl">{p.title}</h3>
-              <button type="button" disabled={!canEdit} onClick={() => void toggle(p)} className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold uppercase", p.active ? "bg-emerald-500/20 text-emerald-400" : "bg-asphalt-lighter text-smoke")}>
+              <button type="button" disabled={!canEdit} onClick={() => void toggle(p)} className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold uppercase", p.active ? "bg-emerald-500/20 text-emerald-700" : "bg-asphalt-lighter text-smoke")}>
                 {p.active ? "Activa" : "Pausada"}
               </button>
             </div>
@@ -675,7 +675,7 @@ function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange:
         onClick={() => onChange(!on)}
         className={cn("relative h-6 w-11 rounded-full transition-colors", on ? "bg-flame" : "bg-asphalt-lighter")}
       >
-        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-bone transition-all", on ? "left-[22px]" : "left-0.5")} />
+        <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-papel transition-all", on ? "left-[22px]" : "left-0.5")} />
       </button>
       {label}
     </label>

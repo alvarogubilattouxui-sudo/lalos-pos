@@ -12,8 +12,8 @@
     "app:build": "tauri build"
   },
   "dependencies": {
-    "@fontsource/bebas-neue": "^5.1.0",
-    "@fontsource/inter": "^5.1.0",
+    "@fontsource/anton": "^5.1.0",
+    "@fontsource/poppins": "^5.1.0",
     "@tauri-apps/api": "^2.1.1",
     "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.0.0",

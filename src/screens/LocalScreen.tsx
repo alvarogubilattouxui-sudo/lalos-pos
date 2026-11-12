@@ -137,7 +137,7 @@ export default function LocalScreen() {
           </div>
         )}
         {loadError && (
-          <div className="rounded-xl bg-ketchup/20 px-4 py-3 text-sm text-[#ff8a7a]">
+          <div className="rounded-xl bg-ketchup/20 px-4 py-3 text-sm text-ketchup">
             No se pudo leer el estado de la tienda: {loadError}
           </div>
         )}
@@ -155,8 +155,8 @@ export default function LocalScreen() {
             className={cn(
               "mt-4 flex w-full items-center justify-center gap-3 rounded-2xl py-5 font-display text-2xl uppercase tracking-poster transition-colors disabled:opacity-40",
               tienda?.cerrado_ahora
-                ? "bg-ketchup text-bone hover:bg-ketchup/80"
-                : "bg-emerald-500 text-carbon hover:bg-emerald-400",
+                ? "bg-ketchup text-papel hover:bg-ketchup/80"
+                : "bg-emerald-500 text-azul-d hover:bg-emerald-400",
             )}
           >
             <Power className="h-7 w-7" />
@@ -201,7 +201,7 @@ export default function LocalScreen() {
                 type="button"
                 onClick={() => guardarAviso(aviso.trim() || null)}
                 disabled={sinCambios || busy === "aviso"}
-                className={cn(boton, "bg-flame text-carbon hover:bg-flame/90")}
+                className={cn(boton, "bg-flame text-azul-d hover:bg-flame/90")}
               >
                 Publicar aviso
               </button>
@@ -271,8 +271,8 @@ export default function LocalScreen() {
                           className={cn(
                             chip,
                             p.available
-                              ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
-                              : "bg-ketchup text-bone hover:bg-ketchup/80",
+                              ? "bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30"
+                              : "bg-ketchup text-papel hover:bg-ketchup/80",
                           )}
                         >
                           {p.name}
@@ -303,8 +303,8 @@ export default function LocalScreen() {
                           className={cn(
                             chip,
                             o.available
-                              ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
-                              : "bg-ketchup text-bone hover:bg-ketchup/80",
+                              ? "bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30"
+                              : "bg-ketchup text-papel hover:bg-ketchup/80",
                           )}
                         >
                           {o.name}
@@ -382,7 +382,7 @@ function HorarioFila({
         type="button"
         onClick={guardar}
         disabled={disabled}
-        className={cn(boton, "ml-auto bg-flame text-carbon hover:bg-flame/90")}
+        className={cn(boton, "ml-auto bg-flame text-azul-d hover:bg-flame/90")}
       >
         Guardar
       </button>

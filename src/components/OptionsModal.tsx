@@ -126,7 +126,7 @@ function Body({ product, onClose, onConfirm }: { product: MenuProduct } & Omit<P
                           on ? "border-flame bg-flame/15" : "border-asphalt-lighter hover:border-bone/30",
                         )}
                       >
-                        <span className={cn("flex h-5 w-5 items-center justify-center rounded-md border-2", on ? "border-flame bg-flame text-carbon" : "border-smoke")}>
+                        <span className={cn("flex h-5 w-5 items-center justify-center rounded-md border-2", on ? "border-flame bg-flame text-azul-d" : "border-smoke")}>
                           {on && <Check className="h-3 w-3" strokeWidth={3} />}
                         </span>
                         <span className="flex-1">{o.name}</span>
@@ -151,7 +151,7 @@ function Body({ product, onClose, onConfirm }: { product: MenuProduct } & Omit<P
                     onClick={() => setQuick((cur) => (on ? cur.filter((x) => x !== q) : [...cur, q]))}
                     className={cn(
                       "rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
-                      on ? "border-mustard bg-mustard text-carbon" : "border-asphalt-lighter text-bone/80 hover:border-bone/30",
+                      on ? "border-mustard bg-mustard text-azul-d" : "border-asphalt-lighter text-bone/80 hover:border-bone/30",
                     )}
                   >
                     {q}

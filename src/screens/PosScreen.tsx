@@ -168,7 +168,7 @@ export default function PosScreen() {
                 }}
                 className={cn(
                   "shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-                  activeCat === c.id && !query ? "bg-flame text-carbon" : "bg-asphalt text-bone/80 hover:bg-asphalt-light",
+                  activeCat === c.id && !query ? "bg-flame text-azul-d" : "bg-asphalt text-bone/80 hover:bg-asphalt-light",
                 )}
               >
                 {c.name}
@@ -214,7 +214,7 @@ export default function PosScreen() {
                       type="button"
                       onClick={() => setCustomizing(p)}
                       title="Personalizar / notas"
-                      className="absolute bottom-2 right-2 rounded-lg bg-carbon/80 p-2 text-smoke hover:bg-mustard hover:text-carbon"
+                      className="absolute bottom-2 right-2 rounded-lg bg-carbon/80 p-2 text-smoke hover:bg-mustard hover:text-azul-d"
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -332,7 +332,7 @@ export default function PosScreen() {
                 ))}
               </div>
               {change !== null && (
-                <p className={cn("mt-2 flex justify-between text-lg font-bold", cashShort ? "text-[#ff8a7a]" : "text-emerald-400")}>
+                <p className={cn("mt-2 flex justify-between text-lg font-bold", cashShort ? "text-ketchup" : "text-emerald-700")}>
                   <span>{cashShort ? "Falta" : "Vuelto"}</span>
                   <span>{formatPrice(Math.abs(change))}</span>
                 </p>

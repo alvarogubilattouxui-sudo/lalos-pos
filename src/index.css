@@ -17,7 +17,7 @@
     @apply select-text;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-flame ring-offset-2 ring-offset-carbon;
+    @apply outline-none ring-2 ring-flame ring-offset-2 ring-offset-crema;
   }
   /* Quita flechas de los input number */
   input[type="number"]::-webkit-inner-spin-button,
@@ -39,16 +39,16 @@
       disabled:cursor-not-allowed disabled:opacity-40;
   }
   .btn-primary {
-    @apply btn bg-flame text-carbon hover:bg-flame-light active:bg-flame-dark;
+    @apply btn bg-flame text-azul-d hover:bg-flame-light active:bg-flame-dark;
   }
   .btn-ghost {
     @apply btn border border-asphalt-lighter text-bone hover:border-bone/40 hover:bg-asphalt-light;
   }
   .btn-danger {
-    @apply btn border border-ketchup/50 text-[#ff8a7a] hover:bg-ketchup/15;
+    @apply btn border border-ketchup/50 text-ketchup hover:bg-ketchup/15;
   }
   .input {
-    @apply w-full rounded-xl border border-asphalt-lighter bg-carbon px-3 py-2.5 text-sm text-bone
+    @apply w-full rounded-xl border border-asphalt-lighter bg-carbon px-3 py-2.5 text-sm text-papel
       placeholder:text-smoke/60 focus:border-flame focus:outline-none;
   }
   .label {

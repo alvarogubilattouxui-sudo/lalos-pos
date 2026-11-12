@@ -17,7 +17,7 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string; icon: 
 const COLUMNS: { status: OrderStatus; title: string; accent: string }[] = [
   { status: "pending", title: "Nuevos", accent: "text-mustard" },
   { status: "preparing", title: "En preparación", accent: "text-flame" },
-  { status: "ready", title: "Listos para entregar", accent: "text-emerald-400" },
+  { status: "ready", title: "Listos para entregar", accent: "text-emerald-700" },
 ];
 
 /** Umbrales de demora (minutos) para pintar las tarjetas. */
@@ -112,7 +112,7 @@ export default function KitchenScreen() {
                       <span className="title text-4xl">{ticketNo(o.ticket_number)}</span>
                       <div className="text-right text-xs">
                         <p className="font-bold uppercase">{ORDER_TYPE_LABELS[o.order_type]}</p>
-                        <p className={cn("flex items-center justify-end gap-1", late ? "font-bold text-[#ff8a7a]" : "text-smoke")}>
+                        <p className={cn("flex items-center justify-end gap-1", late ? "font-bold text-ketchup" : "text-smoke")}>
                           <Clock className="h-3 w-3" /> {formatTime(o.created_at)} · {mins} min
                         </p>
                       </div>
@@ -127,7 +127,7 @@ export default function KitchenScreen() {
                           {it.modifications && (
                             <div className="mt-1 flex flex-wrap gap-1">
                               {it.modifications.split(" · ").map((m) => (
-                                <span key={m} className="rounded bg-mustard px-1.5 py-0.5 text-xs font-bold text-carbon">
+                                <span key={m} className="rounded bg-mustard px-1.5 py-0.5 text-xs font-bold text-azul-d">
                                   {m}
                                 </span>
                               ))}

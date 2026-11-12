@@ -60,7 +60,7 @@ export function Layout() {
           <span className="title text-3xl">
             Lalo<span className="text-flame">&apos;</span>s
           </span>
-          <span className="mt-1 rounded-sm bg-flame px-1 font-display text-xs uppercase tracking-poster text-carbon">POS</span>
+          <span className="mt-1 rounded-sm bg-flame px-1 font-display text-xs uppercase tracking-poster text-azul-d">POS</span>
         </div>
 
         {NAV.map(({ to, label, icon: Icon, key }) => (
@@ -71,7 +71,7 @@ export function Layout() {
             className={({ isActive }) =>
               cn(
                 "group flex w-20 flex-col items-center gap-1 rounded-2xl py-3 transition-colors",
-                isActive ? "bg-flame text-carbon" : "text-smoke hover:bg-asphalt-light hover:text-bone",
+                isActive ? "bg-flame text-azul-d" : "text-smoke hover:bg-asphalt-light hover:text-bone",
               )
             }
           >
@@ -100,7 +100,7 @@ export function Layout() {
       {/* Contenido */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-11 shrink-0 items-center gap-4 border-b border-asphalt-light px-4 text-xs">
-          <span className={cn("flex items-center gap-1.5 font-semibold", online ? "text-emerald-400" : "text-[#ff8a7a]")}>
+          <span className={cn("flex items-center gap-1.5 font-semibold", online ? "text-emerald-700" : "text-ketchup")}>
             {online ? <Cloud className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}
             {online ? "En línea" : "Sin conexión · la caja sigue funcionando"}
           </span>
@@ -141,8 +141,8 @@ export function Layout() {
             key={t.id}
             className={cn(
               "pointer-events-auto max-w-lg rounded-xl px-5 py-3 text-sm font-semibold shadow-2xl",
-              t.kind === "ok" && "bg-emerald-500 text-carbon",
-              t.kind === "error" && "bg-ketchup text-bone",
+              t.kind === "ok" && "bg-emerald-500 text-azul-d",
+              t.kind === "error" && "bg-ketchup text-papel",
               t.kind === "info" && "bg-asphalt-lighter text-bone",
             )}
           >

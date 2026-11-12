@@ -68,7 +68,7 @@ function SupabaseCard() {
       <header className="flex items-center gap-3">
         <Cloud className="h-6 w-6 text-flame" />
         <h2 className="title text-3xl">Nube (Supabase)</h2>
-        <span className={cn("ml-auto rounded-full px-3 py-1 text-xs font-bold", status?.online ? "bg-emerald-500/20 text-emerald-400" : "bg-ketchup/20 text-[#ff8a7a]")}>
+        <span className={cn("ml-auto rounded-full px-3 py-1 text-xs font-bold", status?.online ? "bg-emerald-500/20 text-emerald-700" : "bg-ketchup/20 text-ketchup")}>
           {status?.online ? "En línea" : "Sin conexión"}
         </span>
       </header>
@@ -87,7 +87,7 @@ function SupabaseCard() {
             placeholder={status?.supabase_configured ? "•••• guardada (pegá otra para cambiarla)" : "eyJhbGciOi… o sb_publishable_…"}
           />
           <p className="mt-1.5 flex items-start gap-1.5 text-xs text-smoke">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
             Es la clave pública (la misma de la web). La service_role NO va en el POS: la app la rechaza.
           </p>
         </div>
@@ -222,7 +222,7 @@ function PrinterCard() {
               key={label}
               type="button"
               onClick={() => setTarget(kind ? (target?.kind === kind ? target : DEFAULT_TARGETS[kind]) : null)}
-              className={cn("btn", (target?.kind ?? null) === kind ? "bg-flame text-carbon" : "bg-asphalt-light")}
+              className={cn("btn", (target?.kind ?? null) === kind ? "bg-flame text-azul-d" : "bg-asphalt-light")}
             >
               {label}
             </button>
@@ -290,7 +290,7 @@ function PrinterCard() {
           <label className="label">Ancho de papel</label>
           <div className="grid grid-cols-2 gap-2">
             {([58, 80] as const).map((w) => (
-              <button key={w} type="button" onClick={() => set("paper_width", w)} className={cn("btn", cfg.paper_width === w ? "bg-flame text-carbon" : "bg-asphalt-light")}>
+              <button key={w} type="button" onClick={() => set("paper_width", w)} className={cn("btn", cfg.paper_width === w ? "bg-flame text-azul-d" : "bg-asphalt-light")}>
                 {w} mm
               </button>
             ))}
@@ -300,7 +300,7 @@ function PrinterCard() {
           <label className="label">Copias de comanda</label>
           <div className="grid grid-cols-3 gap-2">
             {[1, 2, 3].map((n) => (
-              <button key={n} type="button" onClick={() => set("kitchen_copies", n)} className={cn("btn", cfg.kitchen_copies === n ? "bg-flame text-carbon" : "bg-asphalt-light")}>
+              <button key={n} type="button" onClick={() => set("kitchen_copies", n)} className={cn("btn", cfg.kitchen_copies === n ? "bg-flame text-azul-d" : "bg-asphalt-light")}>
                 {n}
               </button>
             ))}

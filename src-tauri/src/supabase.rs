@@ -204,13 +204,16 @@ pub async fn rpc(state: &AppState, function: &str, args: &Value) -> AppResult<Va
 /// Descarga las tablas del menú completas (incluye inactivos: el admin los necesita)
 /// y las guarda como copia local para trabajar offline.
 pub async fn refresh_menu_cache(state: &AppState) -> AppResult<Value> {
-    let (categories, products, option_groups, options, product_option_groups, promotions) = tokio::try_join!(
+    let (categories, products, option_groups, options, product_option_groups, promotions, product_costs, option_costs) = tokio::try_join!(
         get(state, "categories?select=*&order=display_order"),
         get(state, "products?select=*&order=display_order"),
         get(state, "option_groups?select=*&order=display_order"),
         get(state, "options?select=*&order=display_order"),
         get(state, "product_option_groups?select=*&order=display_order"),
         get(state, "promotions?select=*&order=created_at.desc"),
+        // Costos: solo personal (la landing no tiene acceso a estas tablas)
+        get(state, "product_costs?select=*"),
+        get(state, "option_costs?select=*"),
     )?;
     let now = Utc::now().to_rfc3339();
     let snapshot = json!({
@@ -220,6 +223,8 @@ pub async fn refresh_menu_cache(state: &AppState) -> AppResult<Value> {
         "options": options,
         "product_option_groups": product_option_groups,
         "promotions": promotions,
+        "product_costs": product_costs,
+        "option_costs": option_costs,
         "fetched_at": now,
     });
     {

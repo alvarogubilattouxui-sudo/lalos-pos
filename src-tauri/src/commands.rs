@@ -122,7 +122,17 @@ pub async fn get_store_state(state: State<'_, AppState>) -> AppResult<Value> {
 
 /* ---------------- Admin del menú (escribe en Supabase) ---------------- */
 
-const ADMIN_TABLES: &[&str] = &["categories", "products", "promotions", "option_groups", "options", "horarios", "tienda"];
+const ADMIN_TABLES: &[&str] = &[
+    "categories",
+    "products",
+    "promotions",
+    "option_groups",
+    "options",
+    "horarios",
+    "tienda",
+    "product_costs",
+    "option_costs",
+];
 
 fn check_table(table: &str) -> AppResult<()> {
     if ADMIN_TABLES.contains(&table) {
@@ -266,6 +276,14 @@ pub fn list_today_orders(state: State<'_, AppState>, limit: Option<i64>) -> AppR
 pub fn day_summary(state: State<'_, AppState>) -> AppResult<orders::DaySummary> {
     let conn = state.db();
     orders::day_summary(&conn)
+}
+
+/// Cobra un pedido (web o de caja): medio de pago e importe cobrado.
+#[tauri::command]
+pub fn mark_order_paid(state: State<'_, AppState>, id: String, method: String, amount: f64) -> AppResult<Order> {
+    let conn = state.db();
+    orders::mark_paid(&conn, &id, &method, amount)?;
+    orders::get(&conn, &id)
 }
 
 #[tauri::command]

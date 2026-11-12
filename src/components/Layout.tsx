@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { ChefHat, CloudOff, Cloud, Maximize2, RefreshCw, Settings, ShoppingCart, Store, UtensilsCrossed } from "lucide-react";
+import { ChefHat, CloudOff, Cloud, Maximize2, Receipt, RefreshCw, Settings, ShoppingCart, Store, UtensilsCrossed } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useApp } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -13,6 +13,7 @@ const NAV = [
   { to: "/menu", label: "Menú", icon: UtensilsCrossed, key: "F3" },
   { to: "/config", label: "Config", icon: Settings, key: "F4" },
   { to: "/local", label: "Local", icon: Store, key: "F5" },
+  { to: "/dia", label: "Día", icon: Receipt, key: "F6" },
 ] as const;
 
 function Clock() {
@@ -32,10 +33,10 @@ export function Layout() {
   const { status, toasts } = useApp();
   const navigate = useNavigate();
 
-  // Atajos: F1-F5 cambian de pantalla, F11 pantalla completa
+  // Atajos: F1-F6 cambian de pantalla, F11 pantalla completa
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
-      const idx = ["F1", "F2", "F3", "F4", "F5"].indexOf(e.key);
+      const idx = NAV.findIndex((n) => n.key === e.key);
       if (idx >= 0) {
         e.preventDefault();
         navigate(NAV[idx].to);

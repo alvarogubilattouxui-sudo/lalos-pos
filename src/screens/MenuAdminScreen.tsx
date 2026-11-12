@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Percent, Plus, RefreshCw, Save, Search, Tag, Trash2, Pencil, X } from "lucide-react";
+import { Coins, Percent, Plus, RefreshCw, Save, Search, Tag, Trash2, Pencil, X } from "lucide-react";
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { buildMenu, normalize } from "@/lib/menu";
 import type { CategoryRow, DiscountType, MenuProduct, OptionGroupRow, ProductRow, PromotionRow } from "@/lib/types";
 import { cn, formatPrice } from "@/lib/format";
 
-type Tab = "products" | "prices" | "promos";
+type Tab = "products" | "prices" | "promos" | "costs";
 
 /**
  * Admin del menú en vivo. Todo cambio se escribe en Supabase (vía Rust) y la landing
@@ -34,6 +34,7 @@ export default function MenuAdminScreen() {
             ["products", "Productos", Tag],
             ["prices", "Ajuste de precios", Percent],
             ["promos", "Promociones", Plus],
+            ["costs", "Costos", Coins],
           ] as const
         ).map(([id, label, Icon]) => (
           <button
@@ -66,6 +67,8 @@ export default function MenuAdminScreen() {
           <ProductsTab canEdit={canEdit} />
         ) : tab === "prices" ? (
           <PricesTab canEdit={canEdit} />
+        ) : tab === "costs" ? (
+          <CostsTab canEdit={canEdit} />
         ) : (
           <PromosTab canEdit={canEdit} />
         )}
@@ -371,6 +374,185 @@ function ProductForm({
         </button>
       </div>
     </Modal>
+  );
+}
+
+/* =========================== Costos =========================== */
+
+/**
+ * Costo de cada producto y de cada agregado. Sirve para calcular la ganancia del día.
+ * Los costos no se publican en la web: se guardan en una tabla que solo ve el personal.
+ */
+function CostsTab({ canEdit }: { canEdit: boolean }) {
+  const { snapshot, toast } = useApp();
+  const [query, setQuery] = useState("");
+
+  const productCost = useMemo(
+    () => new Map((snapshot?.product_costs ?? []).map((c) => [c.id, Number(c.cost)] as const)),
+    [snapshot],
+  );
+  const optionCost = useMemo(
+    () => new Map((snapshot?.option_costs ?? []).map((c) => [c.id, Number(c.cost)] as const)),
+    [snapshot],
+  );
+
+  const q = normalize(query.trim());
+  const products = useMemo(() => {
+    if (!snapshot) return [];
+    const catName = new Map(snapshot.categories.map((c) => [c.id, c.name] as const));
+    return snapshot.products
+      .filter((p) => snapshot.categories.find((c) => c.id === p.category_id)?.active)
+      .filter((p) => !q || normalize(p.name).includes(q))
+      .map((p) => ({ ...p, categoryName: catName.get(p.category_id ?? "") ?? "" }));
+  }, [snapshot, q]);
+
+  const options = useMemo(() => {
+    if (!snapshot) return [];
+    const groupName = new Map(snapshot.option_groups.map((g) => [g.id, g.name] as const));
+    return snapshot.options
+      .filter((o) => !q || normalize(`${o.name} ${groupName.get(o.group_id) ?? ""}`).includes(q))
+      .map((o) => ({ ...o, groupName: groupName.get(o.group_id) ?? "" }));
+  }, [snapshot, q]);
+
+  const saveCost = async (table: "product_costs" | "option_costs", id: string, name: string, n: number) => {
+    try {
+      await api.adminUpdate<{ cost: number }>(table, id, { cost: n });
+      toast(`Costo de ${name}: ${formatPrice(n)}`);
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
+
+  if (!snapshot) return null;
+
+  return (
+    <div className="scroll-thin h-full overflow-y-auto p-5">
+      <div className="mb-5 flex flex-wrap items-center gap-4">
+        <div className="relative w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-smoke" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto u opción…" className="input pl-9" />
+        </div>
+        <p className="text-sm text-smoke">
+          Cargá lo que te cuesta cada cosa. La ganancia del día usa estos números (Día → Ganancia neta).
+        </p>
+      </div>
+
+      <h2 className="title mb-2 text-2xl">Productos</h2>
+      <section className="card mb-8 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-asphalt-light/60 text-left text-xs uppercase text-smoke">
+            <tr>
+              <th className="py-2 pl-3">Producto</th>
+              <th className="py-2">Categoría</th>
+              <th className="w-36 py-2">Precio</th>
+              <th className="w-40 py-2">Costo</th>
+              <th className="w-24 py-2 text-right pr-3">Margen</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-asphalt-light">
+            {products.map((p) => {
+              const cost = productCost.get(p.id) ?? 0;
+              const price = Number(p.price);
+              return (
+                <tr key={p.id} className="hover:bg-asphalt/60">
+                  <td className="py-2 pl-3 font-semibold">{p.name}</td>
+                  <td className="text-smoke">{p.categoryName}</td>
+                  <td>{formatPrice(price)}</td>
+                  <td>
+                    <CostCell value={cost} canEdit={canEdit} onSave={(n) => saveCost("product_costs", p.id, p.name, n)} />
+                  </td>
+                  <td className="pr-3 text-right text-smoke">{price > 0 ? `${Math.round(((price - cost) / price) * 100)}%` : "—"}</td>
+                </tr>
+              );
+            })}
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-6 text-center text-smoke">
+                  No hay productos para mostrar.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <h2 className="title mb-2 text-2xl">Agregados y opciones</h2>
+      <section className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-asphalt-light/60 text-left text-xs uppercase text-smoke">
+            <tr>
+              <th className="py-2 pl-3">Opción</th>
+              <th className="py-2">Grupo</th>
+              <th className="w-36 py-2">Precio</th>
+              <th className="w-40 py-2">Costo</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-asphalt-light">
+            {options.map((o) => (
+              <tr key={o.id} className="hover:bg-asphalt/60">
+                <td className="py-2 pl-3 font-semibold">{o.name}</td>
+                <td className="text-smoke">{o.groupName}</td>
+                <td>{formatPrice(Number(o.price))}</td>
+                <td>
+                  <CostCell
+                    value={optionCost.get(o.id) ?? 0}
+                    canEdit={canEdit}
+                    onSave={(n) => saveCost("option_costs", o.id, o.name, n)}
+                  />
+                </td>
+              </tr>
+            ))}
+            {options.length === 0 && (
+              <tr>
+                <td colSpan={4} className="p-6 text-center text-smoke">
+                  No hay opciones para mostrar.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
+
+/** Costo editable: se guarda al salir del campo o con Enter. */
+function CostCell({ value, canEdit, onSave }: { value: number; canEdit: boolean; onSave: (n: number) => Promise<void> }) {
+  const [text, setText] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setText(String(value)), [value]);
+
+  const save = async () => {
+    const n = Number(text);
+    if (text.trim() === "" || !Number.isFinite(n) || n < 0) return setText(String(value));
+    if (n === value) return;
+    setSaving(true);
+    try {
+      await onSave(n);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="relative w-32">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-smoke">$</span>
+      <input
+        type="number"
+        min={0}
+        step={50}
+        value={text}
+        disabled={!canEdit || saving}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") setText(String(value));
+        }}
+        className={cn("input py-1.5 pl-7 font-semibold", Number(text) !== value && "border-mustard")}
+      />
+    </div>
   );
 }
 

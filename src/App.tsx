@@ -6,6 +6,7 @@ import KitchenScreen from "@/screens/KitchenScreen";
 import MenuAdminScreen from "@/screens/MenuAdminScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import LocalScreen from "@/screens/LocalScreen";
+import DayScreen from "@/screens/DayScreen";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="menu" element={<MenuAdminScreen />} />
             <Route path="config" element={<SettingsScreen />} />
             <Route path="local" element={<LocalScreen />} />
+            <Route path="dia" element={<DayScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

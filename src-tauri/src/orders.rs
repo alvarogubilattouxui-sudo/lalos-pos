@@ -1,0 +1,409 @@
+//! Pedidos en SQLite local.
+
+use chrono::{Duration, Local, SecondsFormat, Utc};
+use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use uuid::Uuid;
+
+use crate::error::{AppError, AppResult};
+
+pub const PAYMENT_METHODS: &[&str] = &["cash", "card", "qr", "transfer"];
+pub const ORDER_TYPES: &[&str] = &["takeaway", "local", "delivery"];
+pub const STATUSES: &[&str] = &["pending", "preparing", "ready", "delivered", "cancelled"];
+
+#[derive(Debug, Deserialize)]
+pub struct NewOrderItem {
+    pub product_id: Option<String>,
+    pub product_name: String,
+    pub unit_price: f64,
+    pub quantity: i64,
+    pub modifications: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NewOrder {
+    pub customer_name: Option<String>,
+    pub order_type: String,
+    pub payment_method: String,
+    pub cash_received: Option<f64>,
+    pub notes: Option<String>,
+    pub items: Vec<NewOrderItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OrderItem {
+    pub id: String,
+    pub product_id: Option<String>,
+    pub product_name: String,
+    pub unit_price: f64,
+    pub quantity: i64,
+    pub modifications: Option<String>,
+    pub subtotal: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Order {
+    pub id: String,
+    pub ticket_number: i64,
+    pub business_day: String,
+    pub customer_name: Option<String>,
+    pub order_type: String,
+    pub status: String,
+    pub total: f64,
+    pub payment_method: String,
+    pub cash_received: Option<f64>,
+    pub notes: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub synced: bool,
+    pub sync_error: Option<String>,
+    pub items: Vec<OrderItem>,
+}
+
+impl Order {
+    pub fn change(&self) -> Option<f64> {
+        self.cash_received.map(|c| round2(c - self.total)).filter(|c| *c > 0.0)
+    }
+
+    /// Payload para la función `pos_upsert_order` de Supabase.
+    pub fn to_cloud_payload(&self) -> Value {
+        json!({
+            "id": self.id,
+            "ticket_number": self.ticket_number,
+            "business_day": self.business_day,
+            "customer_name": self.customer_name,
+            "order_type": self.order_type,
+            "status": self.status,
+            "total": self.total,
+            "payment_method": self.payment_method,
+            "cash_received": self.cash_received,
+            "notes": self.notes,
+            "created_at": self.created_at,
+            "items": self.items.iter().map(|i| json!({
+                "id": i.id,
+                "product_id": i.product_id,
+                "product_name": i.product_name,
+                "product_price": i.unit_price,
+                "quantity": i.quantity,
+                "modifications": i.modifications,
+                "subtotal": i.subtotal,
+            })).collect::<Vec<_>>(),
+        })
+    }
+}
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+fn now_utc() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+/// "Día de caja": lo vendido después de medianoche cuenta para la noche anterior.
+pub fn business_day_offset(days_back: i64) -> String {
+    (Local::now() - Duration::hours(6) - Duration::days(days_back))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+fn clean(s: Option<String>) -> Option<String> {
+    s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
+    if input.items.is_empty() {
+        return Err(AppError::msg("El pedido está vacío"));
+    }
+    if !PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
+        return Err(AppError::msg("Medio de pago inválido"));
+    }
+    if !ORDER_TYPES.contains(&input.order_type.as_str()) {
+        return Err(AppError::msg("Tipo de pedido inválido"));
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let day = business_day_offset(0);
+    let now = now_utc();
+
+    let items: Vec<OrderItem> = input
+        .items
+        .into_iter()
+        .map(|i| {
+            let qty = i.quantity.clamp(1, 99);
+            let price = round2(i.unit_price.max(0.0));
+            OrderItem {
+                id: Uuid::new_v4().to_string(),
+                product_id: i.product_id,
+                product_name: i.product_name.trim().to_string(),
+                unit_price: price,
+                quantity: qty,
+                modifications: clean(i.modifications),
+                subtotal: round2(price * qty as f64),
+            }
+        })
+        .collect();
+    let total = round2(items.iter().map(|i| i.subtotal).sum());
+
+    if input.payment_method == "cash" {
+        if let Some(cash) = input.cash_received {
+            if cash + 0.001 < total {
+                return Err(AppError::msg("El efectivo recibido no alcanza para el total"));
+            }
+        }
+    }
+
+    let tx = conn.transaction()?;
+    let ticket_number: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM orders WHERE business_day = ?1",
+        [&day],
+        |r| r.get(0),
+    )?;
+
+    let customer_name = clean(input.customer_name);
+    let notes = clean(input.notes);
+    let cash_received = if input.payment_method == "cash" { input.cash_received } else { None };
+
+    tx.execute(
+        "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
+                             payment_method, cash_received, notes, created_at, updated_at, synced)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?10, 0)",
+        params![
+            id, ticket_number, day, customer_name, input.order_type, total,
+            input.payment_method, cash_received, notes, now
+        ],
+    )?;
+    for it in &items {
+        tx.execute(
+            "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![it.id, id, it.product_id, it.product_name, it.unit_price, it.quantity, it.modifications, it.subtotal],
+        )?;
+    }
+    tx.commit()?;
+
+    Ok(Order {
+        id,
+        ticket_number,
+        business_day: day,
+        customer_name,
+        order_type: input.order_type,
+        status: "pending".into(),
+        total,
+        payment_method: input.payment_method,
+        cash_received,
+        notes,
+        created_at: now.clone(),
+        updated_at: now,
+        synced: false,
+        sync_error: None,
+        items,
+    })
+}
+
+const ORDER_COLS: &str = "id, ticket_number, business_day, customer_name, order_type, status, total, payment_method,
+                          cash_received, notes, created_at, updated_at, synced, sync_error";
+
+fn map_order(r: &Row) -> rusqlite::Result<Order> {
+    Ok(Order {
+        id: r.get(0)?,
+        ticket_number: r.get(1)?,
+        business_day: r.get(2)?,
+        customer_name: r.get(3)?,
+        order_type: r.get(4)?,
+        status: r.get(5)?,
+        total: r.get(6)?,
+        payment_method: r.get(7)?,
+        cash_received: r.get(8)?,
+        notes: r.get(9)?,
+        created_at: r.get(10)?,
+        updated_at: r.get(11)?,
+        synced: r.get::<_, i64>(12)? == 1,
+        sync_error: r.get(13)?,
+        items: Vec::new(),
+    })
+}
+
+fn load_items(conn: &Connection, order: &mut Order) -> AppResult<()> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, product_id, product_name, unit_price, quantity, modifications, subtotal
+         FROM order_items WHERE order_id = ?1 ORDER BY rowid",
+    )?;
+    order.items = stmt
+        .query_map([&order.id], |r| {
+            Ok(OrderItem {
+                id: r.get(0)?,
+                product_id: r.get(1)?,
+                product_name: r.get(2)?,
+                unit_price: r.get(3)?,
+                quantity: r.get(4)?,
+                modifications: r.get(5)?,
+                subtotal: r.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(())
+}
+
+fn query_orders(conn: &Connection, sql: &str, args: &[&dyn rusqlite::ToSql]) -> AppResult<Vec<Order>> {
+    let mut stmt = conn.prepare(sql)?;
+    let mut orders = stmt.query_map(args, map_order)?.collect::<Result<Vec<_>, _>>()?;
+    for o in orders.iter_mut() {
+        load_items(conn, o)?;
+    }
+    Ok(orders)
+}
+
+/// Pedidos hechos desde la web (Supabase, source = 'web'): los guarda en esta caja con su número de ticket.
+/// Ya están en la nube, así que quedan como sincronizados. Los que ya existen localmente se ignoran.
+pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec<Order>> {
+    let mut imported = Vec::new();
+    for row in rows {
+        let Some(id) = row["id"].as_str().map(str::to_string) else { continue };
+        let already: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM orders WHERE id = ?1)", [&id], |r| r.get(0))?;
+        if already {
+            continue;
+        }
+
+        let day = row["business_day"].as_str().unwrap_or_default().to_string();
+        let created = row["created_at"].as_str().unwrap_or_default().to_string();
+        let updated = row["updated_at"].as_str().unwrap_or(created.as_str()).to_string();
+        let total = row["total"].as_f64().unwrap_or(0.0);
+
+        let tx = conn.transaction()?;
+        let ticket: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(ticket_number), 0) + 1 FROM orders WHERE business_day = ?1",
+            [&day],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
+                                 payment_method, cash_received, notes, created_at, updated_at, synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, 1)",
+            params![
+                id,
+                ticket,
+                day,
+                row["customer_name"].as_str(),
+                row["order_type"].as_str().unwrap_or("takeaway"),
+                row["status"].as_str().unwrap_or("pending"),
+                total,
+                row["payment_method"].as_str().unwrap_or("cash"),
+                row["notes"].as_str(),
+                created,
+                updated,
+            ],
+        )?;
+        for it in row["order_items"].as_array().cloned().unwrap_or_default() {
+            tx.execute(
+                "INSERT INTO order_items (id, order_id, product_id, product_name, unit_price, quantity, modifications, subtotal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    it["id"].as_str().unwrap_or_default(),
+                    id,
+                    it["product_id"].as_str(),
+                    it["product_name"].as_str().unwrap_or_default(),
+                    it["product_price"].as_f64().unwrap_or(0.0),
+                    it["quantity"].as_i64().unwrap_or(1),
+                    it["modifications"].as_str(),
+                    it["subtotal"].as_f64().unwrap_or(0.0),
+                ],
+            )?;
+        }
+        tx.commit()?;
+        imported.push(get(conn, &id)?);
+    }
+    Ok(imported)
+}
+
+pub fn get(conn: &Connection, id: &str) -> AppResult<Order> {
+    let sql = format!("SELECT {ORDER_COLS} FROM orders WHERE id = ?1");
+    let mut order = conn
+        .query_row(&sql, [id], map_order)
+        .optional()?
+        .ok_or_else(|| AppError::msg("Pedido no encontrado"))?;
+    load_items(conn, &mut order)?;
+    Ok(order)
+}
+
+/// Pedidos para el KDS: activos de hoy y de ayer (por si quedó algo colgado), más viejos primero.
+pub fn list_kitchen(conn: &Connection) -> AppResult<Vec<Order>> {
+    let since = business_day_offset(1);
+    let sql = format!(
+        "SELECT {ORDER_COLS} FROM orders
+         WHERE status IN ('pending', 'preparing', 'ready') AND business_day >= ?1
+         ORDER BY created_at ASC"
+    );
+    query_orders(conn, &sql, &[&since])
+}
+
+/// Últimos pedidos del día (para reimprimir desde la caja).
+pub fn list_today(conn: &Connection, limit: i64) -> AppResult<Vec<Order>> {
+    let day = business_day_offset(0);
+    let sql = format!("SELECT {ORDER_COLS} FROM orders WHERE business_day = ?1 ORDER BY ticket_number DESC LIMIT ?2");
+    query_orders(conn, &sql, &[&day, &limit])
+}
+
+pub fn update_status(conn: &Connection, id: &str, status: &str) -> AppResult<()> {
+    if !STATUSES.contains(&status) {
+        return Err(AppError::msg("Estado inválido"));
+    }
+    let n = conn.execute(
+        "UPDATE orders SET status = ?1, updated_at = ?2, synced = 0 WHERE id = ?3",
+        params![status, now_utc(), id],
+    )?;
+    if n == 0 {
+        return Err(AppError::msg("Pedido no encontrado"));
+    }
+    Ok(())
+}
+
+pub fn unsynced(conn: &Connection, limit: i64) -> AppResult<Vec<Order>> {
+    let sql = format!("SELECT {ORDER_COLS} FROM orders WHERE synced = 0 ORDER BY created_at ASC LIMIT ?1");
+    query_orders(conn, &sql, &[&limit])
+}
+
+pub fn count_unsynced(conn: &Connection) -> AppResult<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM orders WHERE synced = 0", [], |r| r.get(0))?)
+}
+
+/// Marca como sincronizado solo si nadie lo modificó mientras se subía.
+pub fn mark_synced(conn: &Connection, id: &str, updated_at: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE orders SET synced = 1, sync_error = NULL WHERE id = ?1 AND updated_at = ?2",
+        params![id, updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn mark_sync_error(conn: &Connection, id: &str, error: &str) -> AppResult<()> {
+    conn.execute("UPDATE orders SET sync_error = ?1 WHERE id = ?2", params![error, id])?;
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct DaySummary {
+    pub business_day: String,
+    pub orders: i64,
+    pub total: f64,
+    pub by_payment: Vec<(String, f64)>,
+}
+
+/// Resumen rápido de caja del día (no cuenta cancelados).
+pub fn day_summary(conn: &Connection) -> AppResult<DaySummary> {
+    let day = business_day_offset(0);
+    let (orders, total): (i64, f64) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(total), 0) FROM orders WHERE business_day = ?1 AND status <> 'cancelled'",
+        [&day],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT payment_method, SUM(total) FROM orders
+         WHERE business_day = ?1 AND status <> 'cancelled' GROUP BY payment_method",
+    )?;
+    let by_payment = stmt
+        .query_map([&day], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(DaySummary { business_day: day, orders, total, by_payment })
+}

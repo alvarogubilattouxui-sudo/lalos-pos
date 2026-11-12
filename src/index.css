@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply select-none overflow-hidden bg-carbon font-sans text-bone antialiased;
+  }
+  input,
+  textarea,
+  select {
+    @apply select-text;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-flame ring-offset-2 ring-offset-carbon;
+  }
+  /* Quita flechas de los input number */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  .title {
+    @apply font-display uppercase leading-none tracking-poster;
+  }
+  .card {
+    @apply rounded-2xl border border-asphalt-light bg-asphalt;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors
+      disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-flame text-carbon hover:bg-flame-light active:bg-flame-dark;
+  }
+  .btn-ghost {
+    @apply btn border border-asphalt-lighter text-bone hover:border-bone/40 hover:bg-asphalt-light;
+  }
+  .btn-danger {
+    @apply btn border border-ketchup/50 text-[#ff8a7a] hover:bg-ketchup/15;
+  }
+  .input {
+    @apply w-full rounded-xl border border-asphalt-lighter bg-carbon px-3 py-2.5 text-sm text-bone
+      placeholder:text-smoke/60 focus:border-flame focus:outline-none;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-smoke;
+  }
+}
+
+@layer utilities {
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #36363e transparent;
+  }
+}

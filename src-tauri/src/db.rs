@@ -1,0 +1,84 @@
+//! SQLite local: la caja sigue cobrando aunque se corte internet.
+//! - `orders` / `order_items`: fuente de verdad local, se suben a Supabase en segundo plano.
+//! - `kv`: configuración (Supabase, impresora) y la última copia del menú.
+
+use std::path::Path;
+
+use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::error::AppResult;
+
+const SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id             TEXT PRIMARY KEY,
+    ticket_number  INTEGER NOT NULL,
+    business_day   TEXT NOT NULL,
+    customer_name  TEXT,
+    order_type     TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    total          REAL NOT NULL,
+    payment_method TEXT NOT NULL,
+    cash_received  REAL,
+    notes          TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    synced         INTEGER NOT NULL DEFAULT 0,
+    sync_error     TEXT
+);
+CREATE INDEX IF NOT EXISTS orders_day_idx    ON orders(business_day, ticket_number);
+CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status, created_at);
+CREATE INDEX IF NOT EXISTS orders_sync_idx   ON orders(synced);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id            TEXT PRIMARY KEY,
+    order_id      TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id    TEXT,
+    product_name  TEXT NOT NULL,
+    unit_price    REAL NOT NULL,
+    quantity      INTEGER NOT NULL,
+    modifications TEXT,
+    subtotal      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items(order_id);
+"#;
+
+pub fn open(path: &Path) -> AppResult<Connection> {
+    let conn = Connection::open(path)?;
+    // WAL: lecturas del KDS no bloquean las escrituras de la caja
+    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;")?;
+    conn.execute_batch(SCHEMA)?;
+    Ok(conn)
+}
+
+pub fn kv_get(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row("SELECT value FROM kv WHERE key = ?1", [key], |r| r.get(0))
+        .optional()?)
+}
+
+pub fn kv_set(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO kv (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn kv_delete(conn: &Connection, key: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM kv WHERE key = ?1", [key])?;
+    Ok(())
+}
+
+pub mod keys {
+    pub const SUPABASE_URL: &str = "supabase_url";
+    pub const SUPABASE_ANON_KEY: &str = "supabase_anon_key";
+    pub const MENU_SNAPSHOT: &str = "menu_snapshot";
+    pub const MENU_SYNCED_AT: &str = "menu_synced_at";
+    pub const PRINTER_CONFIG: &str = "printer_config";
+}

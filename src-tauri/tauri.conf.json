@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lalos POS",
+  "version": "0.1.0",
+  "identifier": "com.lalosburgas.pos",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Lalo's POS",
+        "width": 1366,
+        "height": 768,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true,
+        "maximized": true,
+        "center": true,
+        "backgroundColor": "#121212"
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "img-src": "'self' data: blob: https://*.supabase.co",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "script-src": "'self'"
+      },
+      "capabilities": ["main-capability"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "category": "Business",
+    "shortDescription": "Caja y cocina de Lalo's Burgas",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["Spanish"],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "es-ES"
+      }
+    }
+  }
+}

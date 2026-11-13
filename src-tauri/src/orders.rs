@@ -598,7 +598,12 @@ pub fn fill_missing_costs(conn: &Connection, snapshot: &Value) -> AppResult<usiz
     Ok(updated)
 }
 
-/* ---------------- Caja: apertura y cierre diario ---------------- */
+/* ---------------- Caja: apertura, movimientos y cierre diario ---------------- */
+
+/// Movimientos que suman efectivo en la caja.
+const CASH_IN: &[&str] = &["ingreso", "ajuste_positivo"];
+/// Movimientos que restan efectivo de la caja.
+const CASH_OUT: &[&str] = &["retiro", "gasto", "proveedor", "personal", "ajuste_negativo"];
 
 #[derive(Debug, Serialize, Clone)]
 pub struct CashSession {
@@ -612,18 +617,34 @@ pub struct CashSession {
     pub difference: Option<f64>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct CashMovement {
+    pub id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub amount: f64,
+    pub description: Option<String>,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CashStatus {
     /// Caja abierta (si hay una sin cerrar).
     pub open: Option<CashSession>,
     /// Cobros en efectivo desde la apertura (solo con caja abierta).
     pub cash_sales: f64,
-    /// Lo que debería haber en la caja: apertura + cobros en efectivo.
+    /// Ingresos y egresos manuales de la caja abierta.
+    pub movements_in: f64,
+    pub movements_out: f64,
+    /// Lo que debería haber en la caja: apertura + cobros en efectivo + ingresos − egresos.
     pub expected_cash: f64,
+    /// Movimientos de la caja abierta, del más nuevo al más viejo.
+    pub movements: Vec<CashMovement>,
     pub history: Vec<CashSession>,
 }
 
 const CASH_COLS: &str = "id, business_day, opened_at, opening_cash, closed_at, closing_cash, expected_cash, difference";
+const MOVEMENT_COLS: &str = "id, session_id, kind, amount, description, created_at";
 
 fn cash_row(r: &Row) -> rusqlite::Result<CashSession> {
     Ok(CashSession {
@@ -635,6 +656,17 @@ fn cash_row(r: &Row) -> rusqlite::Result<CashSession> {
         closing_cash: r.get(5)?,
         expected_cash: r.get(6)?,
         difference: r.get(7)?,
+    })
+}
+
+fn movement_row(r: &Row) -> rusqlite::Result<CashMovement> {
+    Ok(CashMovement {
+        id: r.get(0)?,
+        session_id: r.get(1)?,
+        kind: r.get(2)?,
+        amount: r.get(3)?,
+        description: r.get(4)?,
+        created_at: r.get(5)?,
     })
 }
 
@@ -658,18 +690,50 @@ fn cash_sales_since(conn: &Connection, opened_at: &str) -> AppResult<f64> {
     )?)
 }
 
+/// (ingresos, egresos) manuales de una caja.
+fn movement_totals(conn: &Connection, session_id: &str) -> AppResult<(f64, f64)> {
+    let mut stmt = conn.prepare("SELECT kind, amount FROM cash_movements WHERE session_id = ?1")?;
+    let rows = stmt.query_map([session_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)))?;
+    let (mut ins, mut outs) = (0.0, 0.0);
+    for row in rows {
+        let (kind, amount) = row?;
+        if CASH_IN.contains(&kind.as_str()) {
+            ins += amount;
+        } else if CASH_OUT.contains(&kind.as_str()) {
+            outs += amount;
+        }
+    }
+    Ok((round2(ins), round2(outs)))
+}
+
+fn movements_of(conn: &Connection, session_id: &str) -> AppResult<Vec<CashMovement>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {MOVEMENT_COLS} FROM cash_movements WHERE session_id = ?1 ORDER BY created_at DESC"
+    ))?;
+    let rows = stmt.query_map([session_id], movement_row)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Efectivo esperado de una caja: apertura + cobros en efectivo + ingresos − egresos.
+fn expected_for(conn: &Connection, s: &CashSession) -> AppResult<(f64, f64, f64, f64)> {
+    let sales = round2(cash_sales_since(conn, &s.opened_at)?);
+    let (ins, outs) = movement_totals(conn, &s.id)?;
+    let expected = round2(s.opening_cash + sales + ins - outs);
+    Ok((sales, ins, outs, expected))
+}
+
 pub fn cash_status(conn: &Connection) -> AppResult<CashStatus> {
     let open = open_session(conn)?;
-    let (cash_sales, expected_cash) = match &open {
+    let (cash_sales, movements_in, movements_out, expected_cash, movements) = match &open {
         Some(s) => {
-            let sales = round2(cash_sales_since(conn, &s.opened_at)?);
-            (sales, round2(s.opening_cash + sales))
+            let (sales, ins, outs, expected) = expected_for(conn, s)?;
+            (sales, ins, outs, expected, movements_of(conn, &s.id)?)
         }
-        None => (0.0, 0.0),
+        None => (0.0, 0.0, 0.0, 0.0, Vec::new()),
     };
     let mut stmt = conn.prepare(&format!("SELECT {CASH_COLS} FROM cash_sessions ORDER BY opened_at DESC LIMIT 15"))?;
     let history = stmt.query_map([], cash_row)?.collect::<Result<Vec<_>, _>>()?;
-    Ok(CashStatus { open, cash_sales, expected_cash, history })
+    Ok(CashStatus { open, cash_sales, movements_in, movements_out, expected_cash, movements, history })
 }
 
 pub fn cash_open(conn: &Connection, opening_cash: f64) -> AppResult<CashStatus> {
@@ -686,13 +750,34 @@ pub fn cash_open(conn: &Connection, opening_cash: f64) -> AppResult<CashStatus> 
     cash_status(conn)
 }
 
+/// Registra un ingreso, retiro, gasto, pago u otro movimiento en la caja abierta.
+pub fn cash_add_movement(conn: &Connection, kind: &str, amount: f64, description: Option<String>) -> AppResult<CashStatus> {
+    if !CASH_IN.contains(&kind) && !CASH_OUT.contains(&kind) {
+        return Err(AppError::msg("Tipo de movimiento inválido"));
+    }
+    if !amount.is_finite() || amount <= 0.0 {
+        return Err(AppError::msg("Poné un monto mayor a cero"));
+    }
+    let s = open_session(conn)?.ok_or_else(|| AppError::msg("Abrí la caja antes de registrar movimientos"))?;
+    let description = description.map(|d| d.trim().to_string()).filter(|d| !d.is_empty());
+    conn.execute(
+        "INSERT INTO cash_movements (id, session_id, kind, amount, description, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![Uuid::new_v4().to_string(), s.id, kind, round2(amount), description, now_utc()],
+    )?;
+    cash_status(conn)
+}
+
+/// Movimientos de una caja cualquiera (para ver el detalle de un cierre pasado).
+pub fn cash_movements_for(conn: &Connection, session_id: &str) -> AppResult<Vec<CashMovement>> {
+    movements_of(conn, session_id)
+}
+
 pub fn cash_close(conn: &Connection, closing_cash: f64) -> AppResult<CashStatus> {
     if !closing_cash.is_finite() || closing_cash < 0.0 {
         return Err(AppError::msg("Poné un monto válido de efectivo"));
     }
     let s = open_session(conn)?.ok_or_else(|| AppError::msg("No hay caja abierta"))?;
-    let sales = round2(cash_sales_since(conn, &s.opened_at)?);
-    let expected = round2(s.opening_cash + sales);
+    let (_, _, _, expected) = expected_for(conn, &s)?;
     let counted = round2(closing_cash);
     conn.execute(
         "UPDATE cash_sessions SET closed_at = ?1, closing_cash = ?2, expected_cash = ?3, difference = ?4 WHERE id = ?5",

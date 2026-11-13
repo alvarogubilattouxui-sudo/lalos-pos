@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS cash_sessions (
     expected_cash REAL,
     difference    REAL
 );
+CREATE TABLE IF NOT EXISTS cash_movements (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES cash_sessions(id),
+    kind        TEXT NOT NULL,
+    amount      REAL NOT NULL,
+    description TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS cash_movements_session_idx ON cash_movements(session_id);
 "#;
 
 pub fn open(path: &Path) -> AppResult<Connection> {

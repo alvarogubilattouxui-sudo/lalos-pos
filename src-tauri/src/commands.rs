@@ -297,6 +297,23 @@ pub fn cash_close(state: State<'_, AppState>, closing_cash: f64) -> AppResult<or
 }
 
 #[tauri::command]
+pub fn cash_add_movement(
+    state: State<'_, AppState>,
+    kind: String,
+    amount: f64,
+    description: Option<String>,
+) -> AppResult<orders::CashStatus> {
+    let conn = state.db();
+    orders::cash_add_movement(&conn, &kind, amount, description)
+}
+
+#[tauri::command]
+pub fn cash_session_movements(state: State<'_, AppState>, session_id: String) -> AppResult<Vec<orders::CashMovement>> {
+    let conn = state.db();
+    orders::cash_movements_for(&conn, &session_id)
+}
+
+#[tauri::command]
 pub fn day_products(state: State<'_, AppState>) -> AppResult<Vec<orders::ProductProfit>> {
     let conn = state.db();
     orders::day_products(&conn)

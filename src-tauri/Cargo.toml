@@ -1,6 +1,6 @@
 [package]
 name = "lalos-pos"
-version = "0.2.6"
+version = "0.2.7"
 description = "Lalo's Burgas — Caja, comandera, cocina y administración del menú"
 authors = ["Lalo's Burgas"]
 edition = "2021"

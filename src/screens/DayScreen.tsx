@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Banknote } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { CobrarModal } from "@/components/CobrarModal";
 import { CashModal } from "@/components/CashModal";
-import type { CashStatus, DaySummary, Order, ProductProfit } from "@/lib/types";
+import { CASH_KIND_LABELS, CashMovementModal } from "@/components/CashMovementModal";
+import type { CashMovement, CashStatus, DaySummary, Order, ProductProfit } from "@/lib/types";
 import { PAYMENT_LABELS, STATUS_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 
 /** Ganancias y cobros del día: lo vendido, lo que costó, lo que queda y cómo se cobró. */
@@ -17,6 +18,21 @@ export default function DayScreen() {
   const [cobrando, setCobrando] = useState<Order | null>(null);
   const [caja, setCaja] = useState<CashStatus | null>(null);
   const [cashModal, setCashModal] = useState<"open" | "close" | null>(null);
+  const [movOpen, setMovOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [detalle, setDetalle] = useState<CashMovement[]>([]);
+
+  const isIn = (kind: string) => kind === "ingreso" || kind === "ajuste_positivo";
+
+  const toggleDetalle = async (sessionId: string) => {
+    if (expanded === sessionId) return setExpanded(null);
+    setExpanded(sessionId);
+    try {
+      setDetalle(await api.cashSessionMovements(sessionId));
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -100,8 +116,12 @@ export default function DayScreen() {
               <div className="flex flex-wrap items-center gap-6">
                 <div className="text-right text-sm">
                   <p className="text-smoke">Cobrado en efectivo: <strong className="text-bone">{formatPrice(caja.cash_sales)}</strong></p>
+                  <p className="text-smoke">Ingresos: <strong className="text-emerald-700">{formatPrice(caja.movements_in)}</strong> · Egresos: <strong className="text-ketchup">{formatPrice(caja.movements_out)}</strong></p>
                   <p className="text-smoke">Debería haber: <strong className="text-bone">{formatPrice(caja.expected_cash)}</strong></p>
                 </div>
+                <button type="button" onClick={() => setMovOpen(true)} className="btn-ghost">
+                  Registrar movimiento
+                </button>
                 <button type="button" onClick={() => setCashModal("close")} className="btn-primary">
                   Cerrar caja
                 </button>
@@ -112,6 +132,29 @@ export default function DayScreen() {
               </button>
             )}
           </div>
+
+          {caja.open && (
+            <div className="mt-5 border-t border-asphalt-light pt-4">
+              <h3 className="label mb-2">Movimientos de esta caja</h3>
+              {caja.movements.length === 0 ? (
+                <p className="text-sm text-smoke">Todavía no hay ingresos ni egresos. Usá "Registrar movimiento" para cargarlos.</p>
+              ) : (
+                <ul className="divide-y divide-asphalt-light text-sm">
+                  {caja.movements.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-4 py-2">
+                      <div>
+                        <span className="text-smoke">{formatTime(m.created_at)}</span> · <strong>{CASH_KIND_LABELS[m.kind]}</strong>
+                        {m.description && <span className="text-smoke"> · {m.description}</span>}
+                      </div>
+                      <span className={cn("font-bold", isIn(m.kind) ? "text-emerald-700" : "text-ketchup")}>
+                        {isIn(m.kind) ? "+" : "−"} {formatPrice(m.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {caja.history.length > 0 && (
             <div className="mt-5 overflow-x-auto">
@@ -129,7 +172,8 @@ export default function DayScreen() {
                 </thead>
                 <tbody className="divide-y divide-asphalt-light">
                   {caja.history.map((h) => (
-                    <tr key={h.id}>
+                    <Fragment key={h.id}>
+                    <tr onClick={() => void toggleDetalle(h.id)} className="cursor-pointer hover:bg-asphalt/60">
                       <td className="py-2 pr-3">{h.business_day}</td>
                       <td className="py-2 pr-3">{formatTime(h.opened_at)}</td>
                       <td className="py-2 pr-3 text-right">{formatPrice(h.opening_cash)}</td>
@@ -145,12 +189,44 @@ export default function DayScreen() {
                         {h.difference === null ? "—" : h.difference === 0 ? "Cuadra" : `${h.difference > 0 ? "+" : "-"}${formatPrice(Math.abs(h.difference))}`}
                       </td>
                     </tr>
+                    {expanded === h.id && (
+                      <tr>
+                        <td colSpan={7} className="bg-asphalt/40 px-4 py-3">
+                          {detalle.length === 0 ? (
+                            <p className="text-smoke">Sin ingresos ni egresos en esta caja.</p>
+                          ) : (
+                            detalle.map((m) => (
+                              <div key={m.id} className="flex justify-between gap-4 py-1">
+                                <span>
+                                  {formatTime(m.created_at)} · {CASH_KIND_LABELS[m.kind]}
+                                  {m.description ? ` · ${m.description}` : ""}
+                                </span>
+                                <span className={isIn(m.kind) ? "text-emerald-700" : "text-ketchup"}>
+                                  {isIn(m.kind) ? "+" : "−"} {formatPrice(m.amount)}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
         </section>
+      )}
+
+      {movOpen && (
+        <CashMovementModal
+          onClose={() => setMovOpen(false)}
+          onDone={() => {
+            setMovOpen(false);
+            void load();
+          }}
+        />
       )}
 
       {cashModal && (

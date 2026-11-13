@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS order_items (
     subtotal      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items(order_id);
+CREATE TABLE IF NOT EXISTS cash_sessions (
+    id            TEXT PRIMARY KEY,
+    business_day  TEXT NOT NULL,
+    opened_at     TEXT NOT NULL,
+    opening_cash  REAL NOT NULL,
+    closed_at     TEXT,
+    closing_cash  REAL,
+    expected_cash REAL,
+    difference    REAL
+);
 "#;
 
 pub fn open(path: &Path) -> AppResult<Connection> {

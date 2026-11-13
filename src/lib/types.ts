@@ -151,6 +151,24 @@ export interface MethodTotal {
 }
 
 /** Resumen de caja del día (pedidos sin cancelar). */
+export interface CashSession {
+  id: string;
+  business_day: string;
+  opened_at: string;
+  opening_cash: number;
+  closed_at: string | null;
+  closing_cash: number | null;
+  expected_cash: number | null;
+  difference: number | null;
+}
+
+export interface CashStatus {
+  open: CashSession | null;
+  cash_sales: number;
+  expected_cash: number;
+  history: CashSession[];
+}
+
 export interface ProductProfit {
   name: string;
   quantity: number;

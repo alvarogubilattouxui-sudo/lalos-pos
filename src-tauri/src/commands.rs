@@ -279,6 +279,24 @@ pub fn day_summary(state: State<'_, AppState>) -> AppResult<orders::DaySummary> 
 }
 
 #[tauri::command]
+pub fn cash_status(state: State<'_, AppState>) -> AppResult<orders::CashStatus> {
+    let conn = state.db();
+    orders::cash_status(&conn)
+}
+
+#[tauri::command]
+pub fn cash_open(state: State<'_, AppState>, opening_cash: f64) -> AppResult<orders::CashStatus> {
+    let conn = state.db();
+    orders::cash_open(&conn, opening_cash)
+}
+
+#[tauri::command]
+pub fn cash_close(state: State<'_, AppState>, closing_cash: f64) -> AppResult<orders::CashStatus> {
+    let conn = state.db();
+    orders::cash_close(&conn, closing_cash)
+}
+
+#[tauri::command]
 pub fn day_products(state: State<'_, AppState>) -> AppResult<Vec<orders::ProductProfit>> {
     let conn = state.db();
     orders::day_products(&conn)

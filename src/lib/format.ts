@@ -1,4 +1,4 @@
-import type { OrderStatus, OrderType, PaymentMethod } from "@/lib/types";
+import type { Channel, OrderStatus, OrderType, PaymentMethod } from "@/lib/types";
 
 const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
@@ -16,6 +16,14 @@ export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   card: "Débito / Crédito",
   qr: "QR / MercadoPago",
   transfer: "Transferencia",
+  app: "Cobrado por la app",
+};
+
+export const CHANNEL_LABELS: Record<Channel, string> = {
+  mostrador: "Mostrador",
+  web: "Web",
+  pedidosya: "PedidosYa",
+  uber: "Uber Eats",
 };
 
 export const ORDER_TYPE_LABELS: Record<OrderType, string> = {

@@ -319,6 +319,19 @@ pub fn day_products(state: State<'_, AppState>) -> AppResult<Vec<orders::Product
     orders::day_products(&conn)
 }
 
+/// Porcentajes de comisión de PedidosYa y Uber Eats.
+#[tauri::command]
+pub fn get_commissions(state: State<'_, AppState>) -> AppResult<orders::Commissions> {
+    let conn = state.db();
+    orders::get_commissions(&conn)
+}
+
+#[tauri::command]
+pub fn save_commissions(state: State<'_, AppState>, input: orders::Commissions) -> AppResult<orders::Commissions> {
+    let conn = state.db();
+    orders::set_commissions(&conn, input)
+}
+
 /// Cobra un pedido (web o de caja): medio de pago e importe cobrado.
 #[tauri::command]
 pub fn mark_order_paid(state: State<'_, AppState>, id: String, method: String, amount: f64) -> AppResult<Order> {

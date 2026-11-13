@@ -43,6 +43,8 @@ pub fn run() {
             commands::list_today_orders,
             commands::day_summary,
             commands::day_products,
+            commands::get_commissions,
+            commands::save_commissions,
             commands::cash_status,
             commands::cash_open,
             commands::cash_close,

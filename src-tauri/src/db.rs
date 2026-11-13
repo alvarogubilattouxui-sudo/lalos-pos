@@ -78,6 +78,9 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     add_column(&conn, "orders", "paid_method", "TEXT")?;
     add_column(&conn, "orders", "paid_amount", "REAL")?;
     add_column(&conn, "order_items", "unit_cost", "REAL NOT NULL DEFAULT 0")?;
+    // Canal de venta (mostrador, web, PedidosYa, Uber Eats) y comisión que cobra la app, en pesos
+    add_column(&conn, "orders", "channel", "TEXT NOT NULL DEFAULT 'mostrador'")?;
+    add_column(&conn, "orders", "commission", "REAL NOT NULL DEFAULT 0")?;
 
     // Una sola vez: los pedidos anteriores ya estaban cobrados al venderse
     if kv_get(&conn, "migr_cobros_v1")?.is_none() {
@@ -129,4 +132,7 @@ pub mod keys {
     pub const MENU_SNAPSHOT: &str = "menu_snapshot";
     pub const MENU_SYNCED_AT: &str = "menu_synced_at";
     pub const PRINTER_CONFIG: &str = "printer_config";
+    /// Porcentaje de comisión de cada app de delivery (ej. "25").
+    pub const COMMISSION_PEDIDOSYA: &str = "comision_pedidosya";
+    pub const COMMISSION_UBER: &str = "comision_uber";
 }

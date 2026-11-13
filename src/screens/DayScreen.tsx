@@ -7,7 +7,7 @@ import { CobrarModal } from "@/components/CobrarModal";
 import { CashModal } from "@/components/CashModal";
 import { CASH_KIND_LABELS, CashMovementModal } from "@/components/CashMovementModal";
 import type { CashMovement, CashStatus, DaySummary, Order, ProductProfit } from "@/lib/types";
-import { PAYMENT_LABELS, STATUS_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
+import { CHANNEL_LABELS, PAYMENT_LABELS, STATUS_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 
 /** Ganancias y cobros del día: lo vendido, lo que costó, lo que queda y cómo se cobró. */
 export default function DayScreen() {
@@ -21,6 +21,26 @@ export default function DayScreen() {
   const [movOpen, setMovOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detalle, setDetalle] = useState<CashMovement[]>([]);
+  // Porcentajes de comisión (como texto, para poder editarlos en el formulario)
+  const [comForm, setComForm] = useState({ pedidosya: "", uber: "" });
+
+  useEffect(() => {
+    api
+      .getCommissions()
+      .then((c) => setComForm({ pedidosya: String(c.pedidosya), uber: String(c.uber) }))
+      .catch((e) => toast(errorText(e), "error"));
+  }, [toast]);
+
+  const guardarComisiones = async () => {
+    const pct = (v: string) => Number(v.replace(",", ".").trim() || 0);
+    try {
+      await api.saveCommissions({ pedidosya: pct(comForm.pedidosya), uber: pct(comForm.uber) });
+      toast("Comisiones guardadas");
+      void load();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
 
   const isIn = (kind: string) => kind === "ingreso" || kind === "ajuste_positivo";
 
@@ -249,10 +269,11 @@ export default function DayScreen() {
 
       {summary && (
         <>
-          <div className="mb-8 grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <div className="mb-8 grid grid-cols-2 gap-3 xl:grid-cols-6">
             <Kpi label="Vendido" value={formatPrice(summary.total)} sub={`${summary.orders} pedidos`} />
             <Kpi label="Costo" value={formatPrice(summary.cost)} sub="productos y agregados" />
-            <Kpi label="Ganancia neta" value={formatPrice(summary.profit)} sub={margen !== null ? `${margen}% de lo vendido` : undefined} destacada />
+            <Kpi label="Comisiones" value={formatPrice(summary.commission)} sub="PedidosYa y Uber Eats" />
+            <Kpi label="Ganancia real" value={formatPrice(summary.profit)} sub={margen !== null ? `${margen}% de lo vendido, sin comisiones` : undefined} destacada />
             <Kpi label="Cobrado" value={formatPrice(summary.paid_total)} />
             <Kpi
               label="Sin cobrar"
@@ -261,6 +282,38 @@ export default function DayScreen() {
               alerta={summary.pending_orders > 0}
             />
           </div>
+
+          <section className="card mb-8 overflow-hidden">
+            <h2 className="title border-b border-asphalt-light px-5 py-4 text-2xl">Ventas por canal</h2>
+            {summary.by_channel.length === 0 ? (
+              <p className="p-5 text-sm text-smoke">Todavía no hay ventas hoy.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-asphalt-light/60 text-left text-xs uppercase text-smoke">
+                  <tr>
+                    <th className="px-4 py-2">Canal</th>
+                    <th className="px-4 py-2 text-right">Pedidos</th>
+                    <th className="px-4 py-2 text-right">Vendido</th>
+                    <th className="px-4 py-2 text-right">Costo</th>
+                    <th className="px-4 py-2 text-right">Comisión</th>
+                    <th className="px-4 py-2 text-right">Ganancia real</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-asphalt-light">
+                  {summary.by_channel.map((c) => (
+                    <tr key={c.channel} className="hover:bg-asphalt/60">
+                      <td className="px-4 py-2.5 font-semibold">{CHANNEL_LABELS[c.channel]}</td>
+                      <td className="px-4 py-2.5 text-right">{c.orders}</td>
+                      <td className="px-4 py-2.5 text-right">{formatPrice(c.total)}</td>
+                      <td className="px-4 py-2.5 text-right text-smoke">{formatPrice(c.cost)}</td>
+                      <td className="px-4 py-2.5 text-right text-ketchup">{c.commission > 0 ? `− ${formatPrice(c.commission)}` : "—"}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-flame">{formatPrice(c.profit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
 
           <section className="card mb-8 p-5">
             <h2 className="title mb-3 text-2xl">Cobrado por medio de pago</h2>
@@ -284,6 +337,40 @@ export default function DayScreen() {
           </section>
         </>
       )}
+
+      <section className="card mb-8 p-5">
+        <h2 className="title mb-1 text-2xl">Comisiones de las apps</h2>
+        <p className="mb-4 text-sm text-smoke">
+          Poné el porcentaje que cobra cada app. Se descuenta solo en los pedidos que se carguen desde ahora; los anteriores quedan como estaban.
+        </p>
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="block">
+            <span className="label mb-1 block">PedidosYa (%)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={comForm.pedidosya}
+              onChange={(e) => setComForm((f) => ({ ...f, pedidosya: e.target.value }))}
+              placeholder="0"
+              className="input w-32 text-right"
+            />
+          </label>
+          <label className="block">
+            <span className="label mb-1 block">Uber Eats (%)</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={comForm.uber}
+              onChange={(e) => setComForm((f) => ({ ...f, uber: e.target.value }))}
+              placeholder="0"
+              className="input w-32 text-right"
+            />
+          </label>
+          <button type="button" onClick={() => void guardarComisiones()} className="btn-primary">
+            Guardar comisiones
+          </button>
+        </div>
+      </section>
 
       <section className="card mb-8 overflow-hidden">
         <h2 className="title border-b border-asphalt-light px-5 py-4 text-2xl">Ganancia por producto</h2>
@@ -341,7 +428,10 @@ export default function DayScreen() {
                 <tr key={o.id} className={cn("hover:bg-asphalt/60", cancelado && "opacity-50 line-through")}>
                   <td className="px-4 py-2.5 font-bold text-flame">{ticketNo(o.ticket_number)}</td>
                   <td className="px-4 py-2.5 text-smoke">{formatTime(o.created_at)}</td>
-                  <td className="px-4 py-2.5">{o.customer_name ?? "—"}</td>
+                  <td className="px-4 py-2.5">
+                    {o.customer_name ?? "—"}
+                    {o.channel !== "mostrador" && <span className="ml-2 text-xs font-bold uppercase text-smoke">{CHANNEL_LABELS[o.channel]}</span>}
+                  </td>
                   <td className="px-4 py-2.5">{o.pickup_time ?? "Lo antes posible"}</td>
                   <td className="px-4 py-2.5 text-right font-semibold">{formatPrice(o.total)}</td>
                   <td className="px-4 py-2.5">

@@ -3,8 +3,8 @@ import { Banknote, CreditCard, History, Minus, Pencil, Plus, Printer, QrCode, Se
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { normalize } from "@/lib/menu";
-import type { MenuProduct, Order, OrderType, PaymentMethod } from "@/lib/types";
-import { ORDER_TYPE_LABELS, PAYMENT_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
+import type { Channel, MenuProduct, Order, OrderType, PaymentMethod } from "@/lib/types";
+import { CHANNEL_LABELS, ORDER_TYPE_LABELS, PAYMENT_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 import { OptionsModal, type CartLineDraft } from "@/components/OptionsModal";
 import { CobrarModal } from "@/components/CobrarModal";
 
@@ -37,6 +37,7 @@ export default function PosScreen() {
   // Ticket
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("takeaway");
+  const [channel, setChannel] = useState<Channel>("mostrador");
   const [customer, setCustomer] = useState("");
   const [notes, setNotes] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("cash");
@@ -44,11 +45,15 @@ export default function PosScreen() {
   const [saving, setSaving] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Pedidos de PedidosYa / Uber Eats: los cobra la app, así que no hay medio de pago ni efectivo
+  const isApp = channel === "pedidosya" || channel === "uber";
+  const effectivePayment: PaymentMethod = isApp ? "app" : payment;
+
   const total = useMemo(() => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0), [lines]);
   const units = lines.reduce((s, l) => s + l.quantity, 0);
   const cashReceived = cashInput ? Number(cashInput) : null;
-  const change = payment === "cash" && cashReceived !== null ? cashReceived - total : null;
-  const cashShort = payment === "cash" && cashReceived !== null && cashReceived < total;
+  const change = effectivePayment === "cash" && cashReceived !== null ? cashReceived - total : null;
+  const cashShort = effectivePayment === "cash" && cashReceived !== null && cashReceived < total;
 
   const products = useMemo(() => {
     const q = normalize(query.trim());
@@ -85,6 +90,7 @@ export default function PosScreen() {
     setCashInput("");
     setPayment("cash");
     setOrderType("takeaway");
+    setChannel("mostrador");
   };
 
   const checkout = useCallback(async () => {
@@ -94,8 +100,9 @@ export default function PosScreen() {
       const { order, print_error } = await api.createOrder({
         customer_name: customer.trim() || null,
         order_type: orderType,
-        payment_method: payment,
-        cash_received: payment === "cash" ? cashReceived : null,
+        payment_method: effectivePayment,
+        cash_received: effectivePayment === "cash" ? cashReceived : null,
+        channel,
         notes: notes.trim() || null,
         items: lines.map((l) => ({
           product_id: l.productId,
@@ -117,7 +124,7 @@ export default function PosScreen() {
     } finally {
       setSaving(false);
     }
-  }, [lines, saving, cashShort, customer, orderType, payment, cashReceived, notes, toast, refreshStatus]);
+  }, [lines, saving, cashShort, customer, orderType, channel, effectivePayment, cashReceived, notes, toast, refreshStatus]);
 
   // Atajos: F9 cobrar · Ctrl+K buscar · Esc limpiar búsqueda
   useEffect(() => {
@@ -257,6 +264,18 @@ export default function PosScreen() {
               </button>
             ))}
           </div>
+          <div className="grid grid-cols-3 gap-1 rounded-xl bg-carbon p-1" aria-label="Canal de venta">
+            {(["mostrador", "pedidosya", "uber"] as Channel[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setChannel(c)}
+                className={cn("rounded-lg py-2 text-xs font-semibold", channel === c ? "bg-asphalt-lighter text-bone" : "text-smoke")}
+              >
+                {CHANNEL_LABELS[c]}
+              </button>
+            ))}
+          </div>
           <input value={customer} onChange={(e) => setCustomer(e.target.value.slice(0, 40))} placeholder="Nombre del cliente (opcional)" className="input" />
         </div>
 
@@ -292,6 +311,13 @@ export default function PosScreen() {
         <div className="space-y-3 border-t border-asphalt-light p-4">
           <input value={notes} onChange={(e) => setNotes(e.target.value.slice(0, 160))} placeholder="Nota para cocina (opcional)" className="input" />
 
+          {isApp && (
+            <p className="rounded-xl bg-carbon p-3 text-sm text-smoke">
+              Lo cobra {CHANNEL_LABELS[channel]}. No entra plata a la caja; la comisión se descuenta en el resumen del día.
+            </p>
+          )}
+
+          {!isApp && (
           <div className="grid grid-cols-4 gap-2">
             {PAYMENTS.map(({ id, icon: Icon }) => (
               <button
@@ -308,8 +334,9 @@ export default function PosScreen() {
               </button>
             ))}
           </div>
+          )}
 
-          {payment === "cash" && lines.length > 0 && (
+          {effectivePayment === "cash" && lines.length > 0 && (
             <div className="rounded-xl bg-carbon p-3">
               <div className="flex items-center gap-2">
                 <label htmlFor="cash" className="text-xs font-semibold uppercase text-smoke">
@@ -422,6 +449,7 @@ function HistoryDrawer({ onClose }: { onClose: () => void }) {
                 <p className="truncate text-xs text-smoke">
                   {formatTime(o.created_at)} · {o.customer_name ?? "Sin nombre"} · {o.items.length} ítem(s)
                   {o.pickup_time && ` · retiro ${o.pickup_time}`}
+                  {o.channel !== "mostrador" && ` · ${CHANNEL_LABELS[o.channel]}`}
                   {o.status === "cancelled" && " · CANCELADO"}
                   {!o.synced && " · sin subir"}
                 </p>

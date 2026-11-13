@@ -6,11 +6,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::db::{self, keys};
 use crate::error::{AppError, AppResult};
 
 pub const PAYMENT_METHODS: &[&str] = &["cash", "card", "qr", "transfer"];
 pub const ORDER_TYPES: &[&str] = &["takeaway", "local", "delivery"];
 pub const STATUSES: &[&str] = &["pending", "preparing", "ready", "delivered", "cancelled"];
+/// Canales de venta: mostrador (caja), web (landing) y las apps de delivery.
+pub const CHANNELS: &[&str] = &["mostrador", "web", "pedidosya", "uber"];
+/// Apps de delivery: la plata la cobra la app, así que el pedido queda cobrado con medio "app".
+pub const APP_CHANNELS: &[&str] = &["pedidosya", "uber"];
 
 #[derive(Debug, Deserialize)]
 pub struct NewOrderItem {
@@ -32,6 +37,9 @@ pub struct NewOrder {
     pub cash_received: Option<f64>,
     pub notes: Option<String>,
     pub items: Vec<NewOrderItem>,
+    /// Canal de venta. Si no viene, es mostrador.
+    #[serde(default)]
+    pub channel: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -65,6 +73,10 @@ pub struct Order {
     pub paid_at: Option<String>,
     pub paid_method: Option<String>,
     pub paid_amount: Option<f64>,
+    /// Canal de venta: mostrador, web, pedidosya o uber.
+    pub channel: String,
+    /// Comisión que cobra la app sobre este pedido (0 si no es de app). Se calcula al venderlo.
+    pub commission: f64,
     pub created_at: String,
     pub updated_at: String,
     pub synced: bool,
@@ -128,12 +140,20 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
     if input.items.is_empty() {
         return Err(AppError::msg("El pedido está vacío"));
     }
-    if !PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
+    let channel = input.channel.clone().unwrap_or_else(|| "mostrador".to_string());
+    if !CHANNELS.contains(&channel.as_str()) {
+        return Err(AppError::msg("Canal de venta inválido"));
+    }
+    let is_app = APP_CHANNELS.contains(&channel.as_str());
+    if !is_app && !PAYMENT_METHODS.contains(&input.payment_method.as_str()) {
         return Err(AppError::msg("Medio de pago inválido"));
     }
     if !ORDER_TYPES.contains(&input.order_type.as_str()) {
         return Err(AppError::msg("Tipo de pedido inválido"));
     }
+    // Pedido de app: lo cobra la app, así que no suma efectivo a la caja
+    let payment_method = if is_app { "app".to_string() } else { input.payment_method.clone() };
+    let pct = if is_app { commission_pct(conn, &channel)? } else { 0.0 };
 
     let id = Uuid::new_v4().to_string();
     let day = business_day_offset(0);
@@ -159,7 +179,9 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
         .collect();
     let total = round2(items.iter().map(|i| i.subtotal).sum());
 
-    if input.payment_method == "cash" {
+    let commission = round2(total * pct / 100.0);
+
+    if payment_method == "cash" {
         if let Some(cash) = input.cash_received {
             if cash + 0.001 < total {
                 return Err(AppError::msg("El efectivo recibido no alcanza para el total"));
@@ -176,17 +198,17 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
 
     let customer_name = clean(input.customer_name);
     let notes = clean(input.notes);
-    let cash_received = if input.payment_method == "cash" { input.cash_received } else { None };
+    let cash_received = if payment_method == "cash" { input.cash_received } else { None };
 
     // En caja el pedido se cobra al confirmarlo: queda cobrado al mismo momento
     tx.execute(
         "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
                              payment_method, cash_received, notes, created_at, updated_at, synced,
-                             paid_at, paid_method, paid_amount)
-         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?10, 0, ?10, ?7, ?6)",
+                             paid_at, paid_method, paid_amount, channel, commission)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?10, 0, ?10, ?7, ?6, ?11, ?12)",
         params![
             id, ticket_number, day, customer_name, input.order_type, total,
-            input.payment_method, cash_received, notes, now
+            payment_method, cash_received, notes, now, channel, commission
         ],
     )?;
     for it in &items {
@@ -206,13 +228,15 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
         order_type: input.order_type,
         status: "pending".into(),
         total,
-        payment_method: input.payment_method.clone(),
+        payment_method: payment_method.clone(),
         cash_received,
         notes,
         pickup_time: None,
         paid_at: Some(now.clone()),
-        paid_method: Some(input.payment_method),
+        paid_method: Some(payment_method),
         paid_amount: Some(total),
+        channel,
+        commission,
         created_at: now.clone(),
         updated_at: now,
         synced: false,
@@ -223,7 +247,7 @@ pub fn insert(conn: &mut Connection, input: NewOrder) -> AppResult<Order> {
 
 const ORDER_COLS: &str = "id, ticket_number, business_day, customer_name, order_type, status, total, payment_method,
                           cash_received, notes, created_at, updated_at, synced, sync_error,
-                          pickup_time, paid_at, paid_method, paid_amount";
+                          pickup_time, paid_at, paid_method, paid_amount, channel, commission";
 
 fn map_order(r: &Row) -> rusqlite::Result<Order> {
     Ok(Order {
@@ -245,6 +269,8 @@ fn map_order(r: &Row) -> rusqlite::Result<Order> {
         paid_at: r.get(15)?,
         paid_method: r.get(16)?,
         paid_amount: r.get(17)?,
+        channel: r.get(18)?,
+        commission: r.get(19)?,
         items: Vec::new(),
     })
 }
@@ -305,8 +331,8 @@ pub fn import_web_orders(conn: &mut Connection, rows: &[Value]) -> AppResult<Vec
         )?;
         tx.execute(
             "INSERT INTO orders (id, ticket_number, business_day, customer_name, order_type, status, total,
-                                 payment_method, cash_received, notes, created_at, updated_at, synced, pickup_time)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, 1, ?12)",
+                                 payment_method, cash_received, notes, created_at, updated_at, synced, pickup_time, channel)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, ?11, 1, ?12, 'web')",
             params![
                 id,
                 ticket,
@@ -437,15 +463,73 @@ pub struct MethodTotal {
     pub amount: f64,
 }
 
+/// Lo vendido por cada canal (mostrador, web, PedidosYa, Uber Eats) con su ganancia.
+#[derive(Debug, Serialize)]
+pub struct ChannelTotal {
+    pub channel: String,
+    pub orders: i64,
+    pub total: f64,
+    pub cost: f64,
+    /// Comisión que cobró la app (0 en mostrador y web).
+    pub commission: f64,
+    /// Ganancia real: vendido − costo − comisión.
+    pub profit: f64,
+}
+
+/// Porcentaje de comisión de cada app de delivery.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub struct Commissions {
+    pub pedidosya: f64,
+    pub uber: f64,
+}
+
+fn read_pct(conn: &Connection, key: &str) -> AppResult<f64> {
+    Ok(db::kv_get(conn, key)?
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(0.0))
+}
+
+pub fn get_commissions(conn: &Connection) -> AppResult<Commissions> {
+    Ok(Commissions {
+        pedidosya: read_pct(conn, keys::COMMISSION_PEDIDOSYA)?,
+        uber: read_pct(conn, keys::COMMISSION_UBER)?,
+    })
+}
+
+pub fn set_commissions(conn: &Connection, c: Commissions) -> AppResult<Commissions> {
+    for pct in [c.pedidosya, c.uber] {
+        if !pct.is_finite() || !(0.0..=100.0).contains(&pct) {
+            return Err(AppError::msg("La comisión tiene que estar entre 0 y 100"));
+        }
+    }
+    db::kv_set(conn, keys::COMMISSION_PEDIDOSYA, &round2(c.pedidosya).to_string())?;
+    db::kv_set(conn, keys::COMMISSION_UBER, &round2(c.uber).to_string())?;
+    get_commissions(conn)
+}
+
+/// Porcentaje de comisión de un canal de app (0 si no es una app).
+fn commission_pct(conn: &Connection, channel: &str) -> AppResult<f64> {
+    match channel {
+        "pedidosya" => read_pct(conn, keys::COMMISSION_PEDIDOSYA),
+        "uber" => read_pct(conn, keys::COMMISSION_UBER),
+        _ => Ok(0.0),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct DaySummary {
     pub business_day: String,
     /// Pedidos del día (sin cancelados) y lo vendido en total.
     pub orders: i64,
     pub total: f64,
-    /// Costo de lo vendido y ganancia neta (vendido − costo).
+    /// Costo de lo vendido y comisiones de las apps.
     pub cost: f64,
+    pub commission: f64,
+    /// Ganancia real: vendido − costo − comisiones.
     pub profit: f64,
+    /// Desglose por canal de venta.
+    pub by_channel: Vec<ChannelTotal>,
     /// Lo que ya se cobró, por medio de pago.
     pub paid_total: f64,
     pub by_payment: Vec<MethodTotal>,
@@ -467,6 +551,32 @@ pub fn day_summary(conn: &Connection) -> AppResult<DaySummary> {
         [&day],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT o.channel, COUNT(*), COALESCE(SUM(o.total), 0), COALESCE(SUM(o.commission), 0), COALESCE(SUM(c.cost), 0)
+           FROM orders o
+           LEFT JOIN (SELECT order_id, SUM(quantity * unit_cost) AS cost FROM order_items GROUP BY order_id) c
+                  ON c.order_id = o.id
+          WHERE o.business_day = ?1 AND o.status <> 'cancelled'
+          GROUP BY o.channel
+          ORDER BY SUM(o.total) DESC",
+    )?;
+    let by_channel = stmt
+        .query_map([&day], |r| {
+            let total: f64 = r.get(2)?;
+            let commission: f64 = r.get(3)?;
+            let cost: f64 = r.get(4)?;
+            Ok(ChannelTotal {
+                channel: r.get(0)?,
+                orders: r.get(1)?,
+                total: round2(total),
+                cost: round2(cost),
+                commission: round2(commission),
+                profit: round2(total - cost - commission),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let commission: f64 = by_channel.iter().map(|c| c.commission).sum();
 
     let (pending_orders, pending_total): (i64, f64) = conn.query_row(
         "SELECT COUNT(*), COALESCE(SUM(total), 0) FROM orders
@@ -492,12 +602,15 @@ pub fn day_summary(conn: &Connection) -> AppResult<DaySummary> {
         .collect::<Result<Vec<_>, _>>()?;
     let paid_total = round2(by_payment.iter().map(|m| m.amount).sum());
 
+    let commission = round2(commission);
     Ok(DaySummary {
         business_day: day,
         orders,
         total: round2(total),
         cost: round2(cost),
-        profit: round2(total - cost),
+        commission,
+        profit: round2(total - cost - commission),
+        by_channel,
         paid_total,
         by_payment,
         pending_orders,

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppStatus,
   AvailablePrinters,
+  Commissions,
   DaySummary,
   MenuSnapshot,
   NewOrder,
@@ -85,6 +86,8 @@ export const api = {
   listTodayOrders: (limit = 30) => invoke<Order[]>("list_today_orders", { limit }),
   daySummary: () => invoke<DaySummary>("day_summary"),
   dayProducts: () => invoke<ProductProfit[]>("day_products"),
+  getCommissions: () => invoke<Commissions>("get_commissions"),
+  saveCommissions: (input: Commissions) => invoke<Commissions>("save_commissions", { input }),
   cashStatus: () => invoke<CashStatus>("cash_status"),
   cashOpen: (openingCash: number) => invoke<CashStatus>("cash_open", { openingCash }),
   cashClose: (closingCash: number) => invoke<CashStatus>("cash_close", { closingCash }),

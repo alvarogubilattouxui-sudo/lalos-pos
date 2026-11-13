@@ -88,7 +88,9 @@ export type MenuCategory = CategoryRow & { products: MenuProduct[] };
 
 /* ---------- Pedidos (SQLite local) ---------- */
 
-export type PaymentMethod = "cash" | "card" | "qr" | "transfer";
+/** "app" = pedido de PedidosYa o Uber Eats: lo cobró la app, no entra a la caja. */
+export type PaymentMethod = "cash" | "card" | "qr" | "transfer" | "app";
+export type Channel = "mostrador" | "web" | "pedidosya" | "uber";
 export type OrderType = "takeaway" | "local" | "delivery";
 export type OrderStatus = "pending" | "preparing" | "ready" | "delivered" | "cancelled";
 
@@ -121,6 +123,10 @@ export interface Order {
   paid_at: string | null;
   paid_method: PaymentMethod | null;
   paid_amount: number | null;
+  /** Canal de venta: mostrador, web, PedidosYa o Uber Eats. */
+  channel: Channel;
+  /** Comisión que cobra la app sobre este pedido (0 si no es de app). */
+  commission: number;
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -134,6 +140,7 @@ export interface NewOrder {
   payment_method: PaymentMethod;
   cash_received: number | null;
   notes: string | null;
+  channel?: Channel;
   items: {
     product_id: string | null;
     product_name: string;
@@ -198,12 +205,28 @@ export interface ProductProfit {
   profit: number;
 }
 
+export interface ChannelTotal {
+  channel: Channel;
+  orders: number;
+  total: number;
+  cost: number;
+  commission: number;
+  profit: number;
+}
+
+export interface Commissions {
+  pedidosya: number;
+  uber: number;
+}
+
 export interface DaySummary {
   business_day: string;
   orders: number;
   total: number;
   cost: number;
+  commission: number;
   profit: number;
+  by_channel: ChannelTotal[];
   paid_total: number;
   by_payment: MethodTotal[];
   pending_orders: number;

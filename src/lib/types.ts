@@ -162,10 +162,31 @@ export interface CashSession {
   difference: number | null;
 }
 
+export type CashMovementKind =
+  | "ingreso"
+  | "ajuste_positivo"
+  | "retiro"
+  | "gasto"
+  | "proveedor"
+  | "personal"
+  | "ajuste_negativo";
+
+export interface CashMovement {
+  id: string;
+  session_id: string;
+  kind: CashMovementKind;
+  amount: number;
+  description: string | null;
+  created_at: string;
+}
+
 export interface CashStatus {
   open: CashSession | null;
   cash_sales: number;
+  movements_in: number;
+  movements_out: number;
   expected_cash: number;
+  movements: CashMovement[];
   history: CashSession[];
 }
 

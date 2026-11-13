@@ -46,6 +46,8 @@ pub fn run() {
             commands::cash_status,
             commands::cash_open,
             commands::cash_close,
+            commands::cash_add_movement,
+            commands::cash_session_movements,
             commands::update_order_status,
             commands::mark_order_paid,
             commands::list_printers,

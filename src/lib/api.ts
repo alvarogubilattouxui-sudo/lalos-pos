@@ -8,6 +8,8 @@ import type {
   Order,
   OrderStatus,
   PaymentMethod,
+  CashMovement,
+  CashMovementKind,
   CashStatus,
   PrinterConfig,
   ProductProfit,
@@ -86,6 +88,9 @@ export const api = {
   cashStatus: () => invoke<CashStatus>("cash_status"),
   cashOpen: (openingCash: number) => invoke<CashStatus>("cash_open", { openingCash }),
   cashClose: (closingCash: number) => invoke<CashStatus>("cash_close", { closingCash }),
+  cashAddMovement: (kind: CashMovementKind, amount: number, description: string | null) =>
+    invoke<CashStatus>("cash_add_movement", { kind, amount, description }),
+  cashSessionMovements: (sessionId: string) => invoke<CashMovement[]>("cash_session_movements", { sessionId }),
   updateOrderStatus: (id: string, status: OrderStatus) => invoke<void>("update_order_status", { id, status }),
   markOrderPaid: (id: string, method: PaymentMethod, amount: number) => invoke<Order>("mark_order_paid", { id, method, amount }),
 

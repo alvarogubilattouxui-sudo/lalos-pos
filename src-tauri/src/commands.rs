@@ -278,6 +278,12 @@ pub fn day_summary(state: State<'_, AppState>) -> AppResult<orders::DaySummary> 
     orders::day_summary(&conn)
 }
 
+#[tauri::command]
+pub fn day_products(state: State<'_, AppState>) -> AppResult<Vec<orders::ProductProfit>> {
+    let conn = state.db();
+    orders::day_products(&conn)
+}
+
 /// Cobra un pedido (web o de caja): medio de pago e importe cobrado.
 #[tauri::command]
 pub fn mark_order_paid(state: State<'_, AppState>, id: String, method: String, amount: f64) -> AppResult<Order> {

@@ -231,6 +231,8 @@ pub async fn refresh_menu_cache(state: &AppState) -> AppResult<Value> {
         let conn = state.db();
         db::kv_set(&conn, keys::MENU_SNAPSHOT, &snapshot.to_string())?;
         db::kv_set(&conn, keys::MENU_SYNCED_AT, &now)?;
+        // Pedidos de hoy guardados sin costo: se completan con los costos que llegaron
+        let _ = crate::orders::fill_missing_costs(&conn, &snapshot);
     }
     Ok(snapshot)
 }

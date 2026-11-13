@@ -151,6 +151,14 @@ export interface MethodTotal {
 }
 
 /** Resumen de caja del día (pedidos sin cancelar). */
+export interface ProductProfit {
+  name: string;
+  quantity: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+}
+
 export interface DaySummary {
   business_day: string;
   orders: number;

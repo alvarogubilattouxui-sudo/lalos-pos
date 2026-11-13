@@ -42,6 +42,7 @@ pub fn run() {
             commands::list_kitchen_orders,
             commands::list_today_orders,
             commands::day_summary,
+            commands::day_products,
             commands::update_order_status,
             commands::mark_order_paid,
             commands::list_printers,

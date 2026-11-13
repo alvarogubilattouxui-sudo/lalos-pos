@@ -423,6 +423,15 @@ function CostsTab({ canEdit }: { canEdit: boolean }) {
     }
   };
 
+  const saveOptionPrice = async (id: string, name: string, n: number) => {
+    try {
+      await api.adminUpdate<{ price: number }>("options", id, { price: n });
+      toast(`Precio de ${name}: ${formatPrice(n)}`);
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
+
   if (!snapshot) return null;
 
   return (
@@ -483,7 +492,7 @@ function CostsTab({ canEdit }: { canEdit: boolean }) {
             <tr>
               <th className="py-2 pl-3">Opción</th>
               <th className="py-2">Grupo</th>
-              <th className="w-36 py-2">Precio</th>
+              <th className="w-40 py-2">Precio de venta</th>
               <th className="w-40 py-2">Costo</th>
             </tr>
           </thead>
@@ -492,7 +501,13 @@ function CostsTab({ canEdit }: { canEdit: boolean }) {
               <tr key={o.id} className="hover:bg-asphalt/60">
                 <td className="py-2 pl-3 font-semibold">{o.name}</td>
                 <td className="text-smoke">{o.groupName}</td>
-                <td>{formatPrice(Number(o.price))}</td>
+                <td>
+                  <CostCell
+                    value={Number(o.price)}
+                    canEdit={canEdit}
+                    onSave={(n) => saveOptionPrice(o.id, o.name, n)}
+                  />
+                </td>
                 <td>
                   <CostCell
                     value={optionCost.get(o.id) ?? 0}

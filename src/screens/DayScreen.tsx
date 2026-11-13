@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { CobrarModal } from "@/components/CobrarModal";
-import type { DaySummary, Order } from "@/lib/types";
+import type { DaySummary, Order, ProductProfit } from "@/lib/types";
 import { PAYMENT_LABELS, STATUS_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 
 /** Ganancias y cobros del día: lo vendido, lo que costó, lo que queda y cómo se cobró. */
@@ -12,13 +12,15 @@ export default function DayScreen() {
   const { menu, toast } = useApp();
   const [summary, setSummary] = useState<DaySummary | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<ProductProfit[]>([]);
   const [cobrando, setCobrando] = useState<Order | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [s, o] = await Promise.all([api.daySummary(), api.listTodayOrders(300)]);
+      const [s, o, p] = await Promise.all([api.daySummary(), api.listTodayOrders(300), api.dayProducts()]);
       setSummary(s);
       setOrders(o);
+      setProducts(p);
     } catch (e) {
       toast(errorText(e), "error");
     }
@@ -118,6 +120,40 @@ export default function DayScreen() {
           </section>
         </>
       )}
+
+      <section className="card mb-8 overflow-hidden">
+        <h2 className="title border-b border-asphalt-light px-5 py-4 text-2xl">Ganancia por producto</h2>
+        {products.length === 0 ? (
+          <p className="p-5 text-sm text-smoke">Todavía no hay ventas hoy.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-asphalt-light/60 text-left text-xs uppercase text-smoke">
+              <tr>
+                <th className="px-4 py-2">Producto</th>
+                <th className="px-4 py-2 text-right">Cantidad</th>
+                <th className="px-4 py-2 text-right">Vendido</th>
+                <th className="px-4 py-2 text-right">Costo</th>
+                <th className="px-4 py-2 text-right">Ganancia</th>
+                <th className="px-4 py-2 text-right">Margen</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-asphalt-light">
+              {products.map((p) => (
+                <tr key={p.name} className="hover:bg-asphalt/60">
+                  <td className="px-4 py-2.5 font-semibold">{p.name}</td>
+                  <td className="px-4 py-2.5 text-right">{p.quantity}</td>
+                  <td className="px-4 py-2.5 text-right">{formatPrice(p.revenue)}</td>
+                  <td className="px-4 py-2.5 text-right text-smoke">{formatPrice(p.cost)}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-flame">{formatPrice(p.profit)}</td>
+                  <td className="px-4 py-2.5 text-right text-smoke">
+                    {p.revenue > 0 ? `${Math.round((p.profit / p.revenue) * 100)}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       <section className="card overflow-hidden">
         <h2 className="title border-b border-asphalt-light px-5 py-4 text-2xl">Pedidos de hoy</h2>

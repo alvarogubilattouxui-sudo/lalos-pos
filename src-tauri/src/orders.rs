@@ -504,3 +504,96 @@ pub fn day_summary(conn: &Connection) -> AppResult<DaySummary> {
         pending_total: round2(pending_total),
     })
 }
+
+/// Ganancia de cada producto vendido en el día (sin cancelados).
+#[derive(Debug, Serialize)]
+pub struct ProductProfit {
+    pub name: String,
+    pub quantity: i64,
+    pub revenue: f64,
+    pub cost: f64,
+    pub profit: f64,
+}
+
+pub fn day_products(conn: &Connection) -> AppResult<Vec<ProductProfit>> {
+    let day = business_day_offset(0);
+    let mut stmt = conn.prepare(
+        "SELECT oi.product_name, SUM(oi.quantity), COALESCE(SUM(oi.subtotal), 0), COALESCE(SUM(oi.quantity * oi.unit_cost), 0)
+           FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+          WHERE o.business_day = ?1 AND o.status <> 'cancelled'
+          GROUP BY oi.product_name
+          ORDER BY SUM(oi.subtotal) DESC",
+    )?;
+    let rows = stmt
+        .query_map([&day], |r| {
+            let revenue: f64 = r.get(2)?;
+            let cost: f64 = r.get(3)?;
+            Ok(ProductProfit {
+                name: r.get(0)?,
+                quantity: r.get(1)?,
+                revenue: round2(revenue),
+                cost: round2(cost),
+                profit: round2(revenue - cost),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Completa el costo de los ítems guardados sin costo (pedidos hechos antes de cargar los costos).
+/// Usa el costo del producto más el de las personalizaciones que figuran en `modifications`.
+/// Se ejecuta cada vez que se actualiza el menú desde Supabase.
+pub fn fill_missing_costs(conn: &Connection, snapshot: &Value) -> AppResult<usize> {
+    fn num(v: &Value) -> f64 {
+        v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0)
+    }
+
+    let mut product_cost: std::collections::HashMap<String, f64> = Default::default();
+    for r in snapshot["product_costs"].as_array().into_iter().flatten() {
+        if let Some(id) = r["id"].as_str() {
+            product_cost.insert(id.to_string(), num(&r["cost"]));
+        }
+    }
+
+    let mut option_name: std::collections::HashMap<String, String> = Default::default();
+    for o in snapshot["options"].as_array().into_iter().flatten() {
+        if let (Some(id), Some(name)) = (o["id"].as_str(), o["name"].as_str()) {
+            option_name.insert(id.to_string(), name.trim().to_lowercase());
+        }
+    }
+    let mut option_cost: std::collections::HashMap<String, f64> = Default::default();
+    for r in snapshot["option_costs"].as_array().into_iter().flatten() {
+        if let Some(name) = r["id"].as_str().and_then(|id| option_name.get(id)) {
+            option_cost.insert(name.clone(), num(&r["cost"]));
+        }
+    }
+
+    let pending: Vec<(String, String, Option<String>)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, product_id, modifications FROM order_items
+              WHERE (unit_cost IS NULL OR unit_cost = 0) AND product_id IS NOT NULL",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let mut updated = 0;
+    for (id, product_id, mods) in pending {
+        let mut unit = product_cost.get(&product_id).copied().unwrap_or(0.0);
+        if let Some(m) = &mods {
+            for token in m.split(|c: char| c == '·' || c == ':' || c == ',') {
+                if let Some(c) = option_cost.get(&token.trim().to_lowercase()) {
+                    unit += c;
+                }
+            }
+        }
+        if unit > 0.0 {
+            conn.execute("UPDATE order_items SET unit_cost = ?1 WHERE id = ?2", params![round2(unit), id])?;
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}

@@ -4,7 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "@/lib/api";
 import { useApp } from "@/lib/store";
 import { CobrarModal } from "@/components/CobrarModal";
-import type { DaySummary, Order, ProductProfit } from "@/lib/types";
+import { CashModal } from "@/components/CashModal";
+import type { CashStatus, DaySummary, Order, ProductProfit } from "@/lib/types";
 import { PAYMENT_LABELS, STATUS_LABELS, cn, formatPrice, formatTime, ticketNo } from "@/lib/format";
 
 /** Ganancias y cobros del día: lo vendido, lo que costó, lo que queda y cómo se cobró. */
@@ -14,13 +15,16 @@ export default function DayScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<ProductProfit[]>([]);
   const [cobrando, setCobrando] = useState<Order | null>(null);
+  const [caja, setCaja] = useState<CashStatus | null>(null);
+  const [cashModal, setCashModal] = useState<"open" | "close" | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [s, o, p] = await Promise.all([api.daySummary(), api.listTodayOrders(300), api.dayProducts()]);
+      const [s, o, p, c] = await Promise.all([api.daySummary(), api.listTodayOrders(300), api.dayProducts(), api.cashStatus()]);
       setSummary(s);
       setOrders(o);
       setProducts(p);
+      setCaja(c);
     } catch (e) {
       toast(errorText(e), "error");
     }
@@ -75,6 +79,90 @@ export default function DayScreen() {
           Actualizar
         </button>
       </header>
+
+      {caja && (
+        <section className="card mb-6 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="title text-2xl">Caja</h2>
+              {caja.open ? (
+                <p className="mt-1 text-sm text-smoke">
+                  Abierta desde las {formatTime(caja.open.opened_at)} con {formatPrice(caja.open.opening_cash)} en efectivo
+                  {caja.open.business_day !== summary?.business_day && (
+                    <span className="ml-2 font-bold text-mustard">(de un día anterior: cerrala)</span>
+                  )}
+                </p>
+              ) : (
+                <p className="mt-1 text-sm text-smoke">Caja cerrada. Abrila al empezar el día.</p>
+              )}
+            </div>
+            {caja.open ? (
+              <div className="flex flex-wrap items-center gap-6">
+                <div className="text-right text-sm">
+                  <p className="text-smoke">Cobrado en efectivo: <strong className="text-bone">{formatPrice(caja.cash_sales)}</strong></p>
+                  <p className="text-smoke">Debería haber: <strong className="text-bone">{formatPrice(caja.expected_cash)}</strong></p>
+                </div>
+                <button type="button" onClick={() => setCashModal("close")} className="btn-primary">
+                  Cerrar caja
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setCashModal("open")} className="btn-primary">
+                Abrir caja
+              </button>
+            )}
+          </div>
+
+          {caja.history.length > 0 && (
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-smoke">
+                  <tr>
+                    <th className="py-2 pr-3">Día</th>
+                    <th className="py-2 pr-3">Apertura</th>
+                    <th className="py-2 pr-3 text-right">Inicial</th>
+                    <th className="py-2 pr-3">Cierre</th>
+                    <th className="py-2 pr-3 text-right">Esperado</th>
+                    <th className="py-2 pr-3 text-right">Contado</th>
+                    <th className="py-2 text-right">Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-asphalt-light">
+                  {caja.history.map((h) => (
+                    <tr key={h.id}>
+                      <td className="py-2 pr-3">{h.business_day}</td>
+                      <td className="py-2 pr-3">{formatTime(h.opened_at)}</td>
+                      <td className="py-2 pr-3 text-right">{formatPrice(h.opening_cash)}</td>
+                      <td className="py-2 pr-3">{h.closed_at ? formatTime(h.closed_at) : "Abierta"}</td>
+                      <td className="py-2 pr-3 text-right">{h.expected_cash !== null ? formatPrice(h.expected_cash) : "—"}</td>
+                      <td className="py-2 pr-3 text-right">{h.closing_cash !== null ? formatPrice(h.closing_cash) : "—"}</td>
+                      <td
+                        className={cn(
+                          "py-2 text-right font-bold",
+                          h.difference === null ? "text-smoke" : h.difference === 0 ? "text-emerald-700" : "text-ketchup",
+                        )}
+                      >
+                        {h.difference === null ? "—" : h.difference === 0 ? "Cuadra" : `${h.difference > 0 ? "+" : "-"}${formatPrice(Math.abs(h.difference))}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {cashModal && (
+        <CashModal
+          mode={cashModal}
+          onClose={() => setCashModal(null)}
+          onDone={() => {
+            setCashModal(null);
+            void load();
+          }}
+        />
+      )}
 
       {sinCosto > 0 && (
         <p className="mb-6 rounded-xl border border-mustard/50 bg-mustard/10 px-4 py-3 text-sm">

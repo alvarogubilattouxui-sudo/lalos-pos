@@ -8,6 +8,7 @@ import type {
   Order,
   OrderStatus,
   PaymentMethod,
+  CashStatus,
   PrinterConfig,
   ProductProfit,
 } from "@/lib/types";
@@ -82,6 +83,9 @@ export const api = {
   listTodayOrders: (limit = 30) => invoke<Order[]>("list_today_orders", { limit }),
   daySummary: () => invoke<DaySummary>("day_summary"),
   dayProducts: () => invoke<ProductProfit[]>("day_products"),
+  cashStatus: () => invoke<CashStatus>("cash_status"),
+  cashOpen: (openingCash: number) => invoke<CashStatus>("cash_open", { openingCash }),
+  cashClose: (closingCash: number) => invoke<CashStatus>("cash_close", { closingCash }),
   updateOrderStatus: (id: string, status: OrderStatus) => invoke<void>("update_order_status", { id, status }),
   markOrderPaid: (id: string, method: PaymentMethod, amount: number) => invoke<Order>("mark_order_paid", { id, method, amount }),
 

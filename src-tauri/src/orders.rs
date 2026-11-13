@@ -597,3 +597,106 @@ pub fn fill_missing_costs(conn: &Connection, snapshot: &Value) -> AppResult<usiz
     }
     Ok(updated)
 }
+
+/* ---------------- Caja: apertura y cierre diario ---------------- */
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CashSession {
+    pub id: String,
+    pub business_day: String,
+    pub opened_at: String,
+    pub opening_cash: f64,
+    pub closed_at: Option<String>,
+    pub closing_cash: Option<f64>,
+    pub expected_cash: Option<f64>,
+    pub difference: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CashStatus {
+    /// Caja abierta (si hay una sin cerrar).
+    pub open: Option<CashSession>,
+    /// Cobros en efectivo desde la apertura (solo con caja abierta).
+    pub cash_sales: f64,
+    /// Lo que debería haber en la caja: apertura + cobros en efectivo.
+    pub expected_cash: f64,
+    pub history: Vec<CashSession>,
+}
+
+const CASH_COLS: &str = "id, business_day, opened_at, opening_cash, closed_at, closing_cash, expected_cash, difference";
+
+fn cash_row(r: &Row) -> rusqlite::Result<CashSession> {
+    Ok(CashSession {
+        id: r.get(0)?,
+        business_day: r.get(1)?,
+        opened_at: r.get(2)?,
+        opening_cash: r.get(3)?,
+        closed_at: r.get(4)?,
+        closing_cash: r.get(5)?,
+        expected_cash: r.get(6)?,
+        difference: r.get(7)?,
+    })
+}
+
+fn open_session(conn: &Connection) -> AppResult<Option<CashSession>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {CASH_COLS} FROM cash_sessions WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"),
+            [],
+            cash_row,
+        )
+        .optional()?)
+}
+
+/// Efectivo cobrado desde que se abrió la caja (pedidos sin cancelar).
+fn cash_sales_since(conn: &Connection, opened_at: &str) -> AppResult<f64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(paid_amount), 0) FROM orders
+          WHERE paid_method = 'cash' AND paid_at IS NOT NULL AND paid_at >= ?1 AND status <> 'cancelled'",
+        [opened_at],
+        |r| r.get::<_, f64>(0),
+    )?)
+}
+
+pub fn cash_status(conn: &Connection) -> AppResult<CashStatus> {
+    let open = open_session(conn)?;
+    let (cash_sales, expected_cash) = match &open {
+        Some(s) => {
+            let sales = round2(cash_sales_since(conn, &s.opened_at)?);
+            (sales, round2(s.opening_cash + sales))
+        }
+        None => (0.0, 0.0),
+    };
+    let mut stmt = conn.prepare(&format!("SELECT {CASH_COLS} FROM cash_sessions ORDER BY opened_at DESC LIMIT 15"))?;
+    let history = stmt.query_map([], cash_row)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(CashStatus { open, cash_sales, expected_cash, history })
+}
+
+pub fn cash_open(conn: &Connection, opening_cash: f64) -> AppResult<CashStatus> {
+    if !opening_cash.is_finite() || opening_cash < 0.0 {
+        return Err(AppError::msg("Poné un monto válido de efectivo"));
+    }
+    if open_session(conn)?.is_some() {
+        return Err(AppError::msg("La caja ya está abierta"));
+    }
+    conn.execute(
+        "INSERT INTO cash_sessions (id, business_day, opened_at, opening_cash) VALUES (?1, ?2, ?3, ?4)",
+        params![Uuid::new_v4().to_string(), business_day_offset(0), now_utc(), round2(opening_cash)],
+    )?;
+    cash_status(conn)
+}
+
+pub fn cash_close(conn: &Connection, closing_cash: f64) -> AppResult<CashStatus> {
+    if !closing_cash.is_finite() || closing_cash < 0.0 {
+        return Err(AppError::msg("Poné un monto válido de efectivo"));
+    }
+    let s = open_session(conn)?.ok_or_else(|| AppError::msg("No hay caja abierta"))?;
+    let sales = round2(cash_sales_since(conn, &s.opened_at)?);
+    let expected = round2(s.opening_cash + sales);
+    let counted = round2(closing_cash);
+    conn.execute(
+        "UPDATE cash_sessions SET closed_at = ?1, closing_cash = ?2, expected_cash = ?3, difference = ?4 WHERE id = ?5",
+        params![now_utc(), counted, expected, round2(counted - expected), s.id],
+    )?;
+    cash_status(conn)
+}
